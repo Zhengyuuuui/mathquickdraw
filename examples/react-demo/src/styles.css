@@ -1,0 +1,1075 @@
+/* App chrome for the math answer board.
+   Quickdraw owns the paper; everything outside the .board-frame is ours. */
+
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --ink: #111827;
+  --ink-soft: #6b7280;
+  --ink-faint: #9ca3af;
+  --line: #e5e7eb;
+  --line-strong: #d1d5db;
+  --accent: #2f6fed;
+  --accent-ink: #ffffff;
+  --danger: #e5484d;
+  --ok: #30a46c;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.05);
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: #f1f3f5;
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+/* ---------- shell ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.app-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* ---------- home (page picker) ---------- */
+
+.home {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 32px clamp(16px, 5vw, 64px) 48px;
+}
+
+.home-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  max-width: 1120px;
+  margin: 0 auto 24px;
+}
+
+.home-head h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: 0.01em; }
+.home-head p { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-faint); }
+
+.home-muted {
+  max-width: 1120px;
+  margin: 0 auto;
+  font-size: 13.5px;
+  color: var(--ink-faint);
+}
+
+.home-empty {
+  max-width: 1120px;
+  margin: 64px auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.home-error {
+  max-width: 1120px;
+  margin: 0 auto 20px;
+  padding: 14px 16px;
+  border: 1px solid rgba(229, 72, 77, 0.3);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  background: rgba(229, 72, 77, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.home-error p { margin: 0; font-size: 13.5px; line-height: 1.6; }
+.home-error-hint { color: var(--ink-soft); }
+.home-error code { background: rgba(0, 0, 0, 0.05); }
+
+.page-grid {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 1120px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 18px;
+}
+
+.page-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+.page-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 18px rgba(16, 24, 40, 0.1);
+}
+.page-card.is-opening { opacity: 0.6; }
+
+.page-open {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.page-open:disabled { cursor: default; }
+
+.page-shot {
+  display: block;
+  border-bottom: 1px solid var(--line);
+  line-height: 0;
+  background: #fbf9f4;
+}
+.page-shot svg { width: 100%; height: auto; display: block; }
+
+.page-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 14px 13px;
+  min-width: 0;
+}
+
+.page-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-sub { font-size: 12px; color: var(--ink-faint); }
+
+.page-times {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.page-times time { color: inherit; }
+.page-times-dot { opacity: 0.55; }
+
+.page-del {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink-soft);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.page-card:hover .page-del,
+.page-del:focus-visible { opacity: 1; }
+.page-del:hover { background: rgba(229, 72, 77, 0.12); color: var(--danger); border-color: rgba(229, 72, 77, 0.35); }
+.page-del:disabled { opacity: 0; cursor: default; }
+
+/* ---------- dialog + style picker ---------- */
+
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(16, 24, 40, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.dialog {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  background: var(--panel);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(16, 24, 40, 0.28);
+  padding: 20px 22px 18px;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.dialog-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+
+.dialog-x {
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.dialog-x:hover { background: #f1f3f5; color: var(--ink); }
+
+.field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.field-row { flex-direction: row; align-items: center; gap: 14px; }
+
+.field-label { font-size: 12px; font-weight: 620; color: var(--ink-faint); }
+
+.field input[type='text'],
+.field input:not([type]) {
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+}
+.field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.14); }
+.field input:disabled { background: #f7f8fa; }
+
+.style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+}
+
+.style-card {
+  font: inherit;
+  text-align: left;
+  padding: 0 0 9px;
+  border: 1.5px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.style-card:hover:not(:disabled) { border-color: var(--line-strong); }
+.style-card.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.16);
+}
+.style-card:disabled { opacity: 0.5; cursor: default; }
+
+.style-shot { display: block; line-height: 0; border-bottom: 1px solid var(--line); }
+.style-shot svg { width: 100%; height: auto; display: block; }
+
+.style-name {
+  font-size: 12.5px;
+  font-weight: 620;
+  color: var(--ink);
+  padding: 8px 10px 0;
+}
+.style-hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+  padding: 2px 10px 0;
+}
+
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f5f6f8;
+}
+.seg-btn {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 14px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.seg-btn.is-active { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1); }
+.seg-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- page size ---------- */
+
+.size-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.size-chip {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  padding: 6px 13px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+.size-chip:hover:not(:disabled) { border-color: var(--line-strong); color: var(--ink); }
+.size-chip.is-active {
+  border-color: var(--accent);
+  background: rgba(47, 111, 237, 0.1);
+  color: var(--accent);
+}
+.size-chip:disabled { opacity: 0.5; cursor: default; }
+
+.size-note {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.size-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.size-inputs input {
+  width: 108px;
+  font: inherit;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  -moz-appearance: textfield;
+}
+.size-inputs input::-webkit-outer-spin-button,
+.size-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.size-inputs input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.14); }
+.size-inputs input.is-bad {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.14);
+}
+.size-x { color: var(--ink-faint); font-size: 14px; }
+
+/* The sheet boundary. The outside is painted in the app's own background
+   colour rather than a translucent tint, so off-sheet canvas is simply not
+   visible — the board reads as a document, not as a sheet floating in a
+   field the student is not allowed to write on. */
+.page-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  border: 1.5px dashed rgba(47, 111, 237, 0.5);
+  border-radius: 2px;
+  box-shadow: 0 0 0 9999px var(--bg);
+  transition: opacity 160ms ease;
+  z-index: 1;
+}
+.page-frame.is-dark {
+  /* the paper goes dark, the surround stays the app chrome so the sheet still
+     reads as an object sitting on the page */
+  border-color: rgba(120, 160, 255, 0.55);
+}
+
+/* "off the sheet" feedback — the boundary is enforced, so say so */
+.board-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: #7a4a00;
+  background: rgba(255, 244, 214, 0.96);
+  border: 1px solid rgba(181, 129, 5, 0.35);
+  border-radius: 999px;
+  padding: 6px 14px;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.12);
+  animation: hint-in 140ms ease-out;
+}
+@keyframes hint-in {
+  from { opacity: 0; transform: translate(-50%, -4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ---------- alert dialog ---------- */
+
+.alert-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80; /* above .dialog-scrim so it can sit on top of the create dialog */
+  background: rgba(16, 24, 40, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.alert {
+  width: min(420px, 100%);
+  background: var(--panel);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(16, 24, 40, 0.3);
+  padding: 20px 22px 16px;
+}
+.alert h3 {
+  margin: 0 0 10px;
+  font-size: 15.5px;
+  font-weight: 650;
+  color: var(--danger);
+}
+.alert-body {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--ink);
+  white-space: pre-line;
+}
+
+.dialog-error {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--danger);
+}
+
+.dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.style-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(70dvh, 520px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.2);
+  padding: 14px 16px 6px;
+}
+.style-pop .style-grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); }
+.style-pop .field { margin-bottom: 12px; }
+
+/* ---------- command bar (page name + paper style) ---------- */
+
+.cmdbar {
+  flex: 0 0 auto;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cmdbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cmd-home {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 6px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cmd-home svg { width: 17px; height: 17px; }
+.cmd-home:hover { background: #f1f3f5; color: var(--ink); }
+
+.cmd-pagename {
+  flex: 0 1 auto;
+  min-width: 80px;
+  max-width: 220px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  outline: none;
+  text-overflow: ellipsis;
+}
+.cmd-pagename:hover { border-color: var(--line); }
+.cmd-pagename:focus { border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.14); }
+
+.cmd-style { position: relative; flex: 0 0 auto; }
+
+.cmd-style-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--ink-soft);
+  background: #f5f6f8;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cmd-style-btn:hover { background: #eceef2; color: var(--ink); }
+.cmd-style-btn[aria-expanded='true'] { background: rgba(47, 111, 237, 0.12); color: var(--accent); }
+
+.cmd-style-sub { font-size: 11px; color: var(--ink-faint); font-weight: 400; }
+
+.cmd-saving {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* page-persistence failure — visible, but never blocks drawing */
+.persist-error {
+  flex: 0 0 auto;
+  background: #fdecec;
+  border-bottom: 1px solid #f3c1c3;
+  color: #b4232a;
+  font-size: 12.5px;
+  padding: 6px 16px;
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.btn:hover:not(:disabled) { background: #f5f6f8; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover:not(:disabled) { background: #2560d8; }
+
+/* ---------- board split: formula column + paper ---------- */
+
+.board-split {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+/* formula column — deliberately outside the sheet (scheme B), so the paper
+   itself stays 100% writable and the engine never learns about formulas.
+   Width is user-draggable via the edge handle; inline style wins over the
+   clamp fallback here, which only applies before hydration. */
+.formula-panel {
+  flex: 0 0 clamp(260px, 22vw, 340px);
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  position: relative;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  min-height: 0;
+}
+
+.formula-panel.is-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.formula-panel.is-dragging .formula-inner { pointer-events: none; }
+
+.formula-inner {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+/* The drag grip on the panel's RIGHT edge (the seam with the paper): 6px
+   visual, ~20px hit target. `touch-action: none` is the finger-friendly
+   part — without it the browser steals a touch drag for scrolling and the
+   width never moves. */
+.formula-resize {
+  flex: 0 0 6px;
+  align-self: stretch;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 2;
+}
+.formula-resize::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1px;
+  width: 4px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.formula-resize:hover::before,
+.formula-resize.is-active::before { background: var(--line-strong); }
+.formula-panel.is-dragging .formula-resize::before { background: var(--accent); }
+/* widen the touch target invisibly so a finger can land on it */
+.formula-resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -7px;
+  right: -7px;
+}
+
+.formula-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.formula-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.formula-layout-btn {
+  margin-left: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ink-soft);
+  background: #f5f6f8;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.formula-layout-btn:hover { background: #eceef2; color: var(--ink); }
+.formula-layout-btn[aria-pressed='true'] { background: rgba(47, 111, 237, 0.12); color: var(--accent); }
+
+/* scrollable in both axes: long multi-formula dumps grow down, single-line
+   math grows right — neither may push the panel or the paper around */
+.formula-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfbfc;
+  font-size: 17px;
+  /* macOS hides scrollbars until hover — a panel this narrow reads as
+     "frozen" when the affordance is invisible. Always show them. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.formula-view::-webkit-scrollbar { width: 9px; height: 9px; }
+.formula-view::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 5px;
+  border: 2px solid #fbfbfc;
+}
+.formula-view::-webkit-scrollbar-track { background: transparent; }
+.formula-view .katex-display { margin: 0.4em 0; }
+
+/* horizontal layout: the whole source is one math line, so give that line
+   its own visible sideways scroll bar instead of relying on the view edges */
+.formula-rendered.is-horizontal {
+  width: max-content;
+  min-width: 100%;
+}
+.formula-rendered.is-horizontal .katex-display {
+  margin: 0;
+  padding-bottom: 4px;
+}
+
+/* vertical layout: one card per block; each card flows its safe-break lines
+   stacked. A card never scrolls sideways unless it holds an atomic formula
+   that genuinely cannot wrap — then that one line scrolls on its own. */
+.formula-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.formula-stack .formula-block {
+  min-width: 0;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--line);
+}
+.formula-stack .formula-block:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* the wrapped rows: each is its own typeset formula, block height grows
+   with row count — "didn't fit → second row → and so on" */
+.formula-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formula-line {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* atomic rows (cases, unbreakable \text chains) are the only ones that
+     ever overflow; their scrollbar stays out of sight until the row is
+     hovered/focused so the column reads clean — content still scrolls */
+  scrollbar-width: none;
+}
+.formula-line:hover,
+.formula-line:focus-visible { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.formula-line::-webkit-scrollbar { height: 6px; display: none; }
+.formula-line:hover::-webkit-scrollbar,
+.formula-line:focus-visible::-webkit-scrollbar { display: block; }
+.formula-line::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 3px;
+}
+.formula-line .katex-display {
+  margin: 0;
+  width: max-content;
+  min-width: 100%;
+  padding-bottom: 2px;
+}
+
+.formula-empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--ink-faint);
+}
+
+.formula-broken .formula-raw {
+  margin: 0 0 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ink);
+}
+.formula-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.formula-editor { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+
+.formula-input {
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  resize: vertical;
+  min-height: 76px;
+}
+.formula-input::placeholder { color: var(--ink-faint); }
+.formula-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.14); }
+
+.formula-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.formula-foot .formula-dirty { color: #b58105; font-weight: 550; }
+.formula-foot .formula-saving { color: var(--accent); font-weight: 550; }
+.formula-foot .formula-hint { margin-left: auto; white-space: nowrap; }
+
+/* the Quickdraw paper */
+.board-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 14px;
+  gap: 10px;
+}
+
+.board-frame {
+  flex: 1 1 auto;
+  min-height: 220px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  background: #fbf9f4;
+  position: relative;
+}
+
+.board-footer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+/* ---------- toolbar ---------- */
+
+.toolbar {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.toolbar::-webkit-scrollbar { display: none; }
+
+.toolbar-group { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+
+.tb-sep { width: 1px; height: 22px; background: var(--line); flex: 0 0 auto; margin: 0 3px; }
+.tb-spacer { flex: 1 1 auto; }
+
+.tb-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 0;
+}
+.tb-btn svg { width: 19px; height: 19px; }
+.tb-btn:hover:not(:disabled) { background: #f1f3f5; color: var(--ink); }
+.tb-btn.is-active { background: rgba(47, 111, 237, 0.12); color: var(--accent); border-color: rgba(47, 111, 237, 0.25); }
+.tb-btn:disabled { opacity: 0.32; cursor: default; }
+.tb-btn.tb-danger:hover:not(:disabled) { background: rgba(229, 72, 77, 0.1); color: var(--danger); }
+
+.tb-zoom {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.tb-colors { gap: 5px; padding: 0 2px; }
+
+.tb-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--line-strong);
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.tb-swatch.is-active { box-shadow: 0 0 0 2px var(--accent); }
+.tb-swatch:disabled { opacity: 0.35; cursor: default; }
+
+.tb-size {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.tb-size span { display: block; border-radius: 50%; background: var(--ink-soft); }
+.tb-size:hover:not(:disabled) { background: #f1f3f5; }
+.tb-size.is-active { background: rgba(47, 111, 237, 0.12); border-color: rgba(47, 111, 237, 0.25); }
+.tb-size.is-active span { background: var(--accent); }
+.tb-size:disabled { opacity: 0.32; cursor: default; }
+
+/* ---------- home AI card ---------- */
+
+.ai-card {
+  max-width: 1120px;
+  margin: 26px auto 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.ai-card-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
+.ai-card-head p { margin: 4px 0 12px; font-size: 12.5px; color: var(--ink-faint); }
+
+.ai-card-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ai-prompt {
+  flex: 1 1 260px;
+  min-width: 0;
+  font: inherit;
+  font-size: 13.5px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+}
+.ai-prompt::placeholder { color: var(--ink-faint); }
+.ai-prompt:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.14); }
+.ai-prompt:disabled { background: #f7f8fa; }
+
+.ai-error {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* ---------- narrow / portrait ---------- */
+
+@media (max-width: 880px) {
+  .cmdbar { padding: 8px 10px 6px; gap: 6px; }
+  .cmdbar-row { flex-wrap: wrap; }
+  .cmd-pagename { max-width: 40vw; }
+  .cmd-saving { display: none; }
+  .style-pop { left: 0; right: auto; }
+
+  /* formula column collapses to a top strip above the paper */
+  .board-split { flex-direction: column; }
+  .formula-panel {
+    flex: 0 0 auto;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: 10px 12px;
+  }
+  .formula-view { max-height: 180px; }
+  .board-col { padding: 10px; gap: 8px; }
+
+  .home { padding: 20px 14px 32px; }
+  .home-head { margin-bottom: 16px; }
+  .home-head h1 { font-size: 18px; }
+  .page-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+  .page-del { opacity: 1; }           /* no hover on touch */
+  .dialog-scrim { padding: 12px; align-items: flex-start; }
+  .dialog { max-height: calc(100dvh - 24px); padding: 16px; }
+  .style-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+}
+
+/* ---------- bad deep link ---------- */
+
+.not-found {
+  max-width: 1120px;
+  margin: 0 auto 20px;
+  padding: 18px 20px;
+  border: 1px solid rgba(229, 72, 77, 0.3);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  background: rgba(229, 72, 77, 0.05);
+}
+.not-found h1 { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
+.not-found p { margin: 0 0 12px; font-size: 13.5px; line-height: 1.7; color: var(--ink-soft); }

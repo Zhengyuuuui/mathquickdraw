@@ -1,0 +1,16 @@
+{
+  "name": "quickdraw-api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "migrations:local": "wrangler d1 migrations apply DB --local",
+    "migrations:remote": "wrangler d1 migrations apply DB --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260911.1",
+    "wrangler": "^4.131.1"
+  }
+}

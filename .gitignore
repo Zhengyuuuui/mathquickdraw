@@ -7,3 +7,5 @@ packages/react-native/src/board-html.generated.js
 .vercel/
 .astro/
 .env.local
+.wrangler/
+.dev.vars

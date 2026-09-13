@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "build": "npm run build --workspace=@quickdrawjs/react-native",
     "dev": "npm run dev --workspace=quickdraw-react-demo",
-    "typecheck": "tsc -p tsconfig.json",
+    "dev:api": "npm run dev --workspace=quickdraw-api",
+    "typecheck": "tsc -p tsconfig.json && tsc -p examples/react-demo/tsconfig.json && tsc -p apps/api/tsconfig.json",
     "star-history": "node scripts/star-history.mjs",
     "publish:all": "npm publish --workspace=@quickdrawjs/core --access public && npm publish --workspace=@quickdrawjs/react --access public && npm publish --workspace=@quickdrawjs/react-native --access public"
   },

@@ -16,7 +16,8 @@ export type FillId = 'none' | 'semi' | 'solid' | 'pattern'
 export type FontId = 'draw' | 'sans' | 'serif' | 'mono'
 export type GeoId = 'rectangle' | 'ellipse' | 'triangle' | 'diamond' | 'hexagon' | 'star'
 export type ThemeId = 'light' | 'dark'
-export type GridId = 'none' | 'lines' | 'dots'
+/** Backdrops — matches GRID_IDS in palette.js. */
+export type GridId = 'none' | 'lines' | 'ruled' | 'dots' | 'crosses' | 'iso'
 
 export interface Bounds { x: number; y: number; w: number; h: number }
 export interface Camera { x: number; y: number; z: number }
