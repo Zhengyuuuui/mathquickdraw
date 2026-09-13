@@ -1,3 +1,6 @@
 # Copy to `.dev.vars` for local `wrangler dev` (`.dev.vars` is gitignored).
-# Never commit a real token — production gets it via `wrangler secret put APP_TOKEN`.
+# Never commit a real token — production gets these via `wrangler secret put`.
 APP_TOKEN=change-me
+# HMAC secret for per-page agent tokens. Without it every X-Page-Token is
+# rejected (by design). Use something long and random.
+JWT_SECRET=change-me-too

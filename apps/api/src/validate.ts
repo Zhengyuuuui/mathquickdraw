@@ -44,6 +44,36 @@ export interface Camera {
   z: number
 }
 
+/** The four verdicts an agent can return. Kept small so the UI can map each to its own colour. */
+export type GradingOverall = 'correct' | 'incorrect' | 'partial' | 'unreadable'
+
+export const ALLOWED_OVERALL: readonly GradingOverall[] = ['correct', 'incorrect', 'partial', 'unreadable']
+
+/**
+ * The grading agent's result. Written by an external party, so every field is
+ * normalised on the way in (see sanitizeGrading) rather than trusted.
+ */
+export interface GradingResult {
+  readable: boolean
+  overall: GradingOverall
+  transcription: string
+  firstError: { description: string; correction: string } | null
+  correctSolution: string
+  teacherComment: string
+  gradedAt: number
+}
+
+/**
+ * Ceiling on the free-text grading fields. Same order of magnitude as
+ * MAX_FORMULA_CHARS: long enough for a full worked solution, short enough
+ * that a runaway agent cannot bloat the row.
+ */
+export const MAX_GRADING_CHARS = 8000
+
+/** Ceiling on an uploaded submission snapshot. PNG, raw bytes. */
+export const MAX_SUBMISSION_BYTES = 6 * 1024 * 1024
+
+
 export const BLANK_SNAPSHOT: Record<string, unknown> = { document: { store: {} } }
 export const DEFAULT_STYLE: PageStyle = { theme: 'light', grid: 'ruled' }
 
@@ -155,6 +185,59 @@ export function sanitizeFormula(raw: unknown): string | null {
   return raw
 }
 
+/**
+ * Normalise an agent-supplied grading result. The agent is an untrusted
+ * producer running in someone else's browser: every field is coerced to a
+ * sane value rather than rejected, because a half-usable report is still
+ * worth showing and a 400 would just make the agent retry blindly.
+ *
+ * `gradedAt` is always the server clock — the agent's clock means nothing here.
+ */
+export function sanitizeGrading(raw: unknown): GradingResult {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw badRequest('grading 必须是对象或 null')
+  }
+  const src = raw as Record<string, unknown>
+
+  const readable = typeof src.readable === 'boolean' ? src.readable : true
+
+  let overall: GradingOverall
+  if (ALLOWED_OVERALL.includes(src.overall as GradingOverall)) {
+    overall = src.overall as GradingOverall
+  } else {
+    overall = readable ? 'incorrect' : 'unreadable'
+  }
+
+  const text = (v: unknown): string => {
+    const s = typeof v === 'string' ? v : ''
+    return s.length > MAX_GRADING_CHARS ? s.slice(0, MAX_GRADING_CHARS) : s
+  }
+
+  let firstError: GradingResult['firstError'] = null
+  const fe = src.firstError
+  if (fe && typeof fe === 'object' && !Array.isArray(fe)) {
+    const f = fe as Record<string, unknown>
+    // Both halves must be present — a description with no correction is not
+    // actionable, and vice versa.
+    if (typeof f.description === 'string' && typeof f.correction === 'string') {
+      firstError = {
+        description: f.description.slice(0, MAX_GRADING_CHARS),
+        correction: f.correction.slice(0, MAX_GRADING_CHARS),
+      }
+    }
+  }
+
+  return {
+    readable,
+    overall,
+    transcription: text(src.transcription),
+    firstError,
+    correctSolution: text(src.correctSolution),
+    teacherComment: text(src.teacherComment),
+    gradedAt: Date.now(),
+  }
+}
+
 // ---- reading back out of D1 (never throws: bad rows degrade, not 500) ------
 
 export function coerceStyle(text: string | null): PageStyle {
@@ -225,4 +308,46 @@ export function coerceSnapshot(text: string): Record<string, unknown> {
     // fall through
   }
   return BLANK_SNAPSHOT
+}
+
+/**
+ * Read a stored grading back out. Never throws and never 500s: a row whose
+ * grading JSON was corrupted by hand, by an older deploy or by a bad agent
+ * degrades to "no grading" so the page still opens. This repo has already
+ * been taken down once by a single dirty shape — the same mistake in a
+ * column an external party writes would be indefensible.
+ */
+export function coerceGrading(text: string | null): GradingResult | null {
+  if (!text) return null
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const src = raw as Record<string, unknown>
+
+  if (!ALLOWED_OVERALL.includes(src.overall as GradingOverall)) return null
+  if (typeof src.readable !== 'boolean') return null
+
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+  let firstError: GradingResult['firstError'] = null
+  const fe = src.firstError
+  if (fe && typeof fe === 'object' && !Array.isArray(fe)) {
+    const f = fe as Record<string, unknown>
+    if (typeof f.description === 'string' && typeof f.correction === 'string') {
+      firstError = { description: f.description, correction: f.correction }
+    }
+  }
+
+  return {
+    readable: src.readable,
+    overall: src.overall as GradingOverall,
+    transcription: str(src.transcription),
+    firstError,
+    correctSolution: str(src.correctSolution),
+    teacherComment: str(src.teacherComment),
+    gradedAt: typeof src.gradedAt === 'number' && Number.isFinite(src.gradedAt) ? src.gradedAt : 0,
+  }
 }

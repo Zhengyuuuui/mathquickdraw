@@ -5,14 +5,17 @@ import {
   BLANK_SNAPSHOT,
   DEFAULT_STYLE,
   coerceCamera,
+  coerceGrading,
   coerceSnapshot,
   coerceStyle,
   sanitizeCamera,
   sanitizeFormula,
+  sanitizeGrading,
   sanitizeName,
   sanitizeSnapshot,
   sanitizeStyle,
   type Camera,
+  type GradingResult,
   type PageStyle,
 } from './validate'
 
@@ -28,7 +31,17 @@ export interface PageMeta {
 export interface PageRecord extends PageMeta {
   camera: Camera | null
   snapshot: unknown
+  submittedAt: number | null
+  grading: GradingResult | null
 }
+
+/**
+ * Every column except submission_image. The BLOB is only ever read by the
+ * .png endpoint — pulling it into every metadata SELECT would drag megabytes
+ * across the wire to be thrown away.
+ */
+const PAGE_COLUMNS =
+  'id, name, style, camera, snapshot, formula, created_at, updated_at, deleted_at, submitted_at, grading, token_jti'
 
 interface PageRow {
   id: string
@@ -40,6 +53,9 @@ interface PageRow {
   created_at: number
   updated_at: number
   deleted_at: number | null
+  submitted_at: number | null
+  grading: string | null
+  token_jti: string | null
 }
 
 type MetaRow = Pick<PageRow, 'id' | 'name' | 'style' | 'formula' | 'created_at' | 'updated_at'>
@@ -61,6 +77,8 @@ function toRecord(row: PageRow): PageRecord {
     ...toMeta(row),
     camera: coerceCamera(row.camera),
     snapshot: coerceSnapshot(row.snapshot),
+    submittedAt: row.submitted_at ?? null,
+    grading: coerceGrading(row.grading),
   }
 }
 
@@ -101,7 +119,7 @@ async function newId(db: D1Database): Promise<string> {
 
 async function readRow(db: D1Database, id: string): Promise<PageRow | null> {
   return db
-    .prepare('SELECT * FROM page WHERE id = ?1 AND deleted_at IS NULL')
+    .prepare(`SELECT ${PAGE_COLUMNS} FROM page WHERE id = ?1 AND deleted_at IS NULL`)
     .bind(id)
     .first<PageRow>()
 }
@@ -189,6 +207,12 @@ export async function patchPage(
     formula = sanitizeFormula(body.formula)
     push('formula = ?', formula)
   }
+  if ('grading' in body) {
+    // null clears it — that is how "the agent found nothing worth reporting"
+    // and "this grading is stale" are both expressed.
+    const grading = body.grading === null || body.grading === undefined ? null : sanitizeGrading(body.grading)
+    push('grading = ?', grading ? JSON.stringify(grading) : null)
+  }
 
   const updatedAt = Date.now()
   push('updated_at = ?', updatedAt)
@@ -206,5 +230,84 @@ export async function deletePage(db: D1Database, id: string): Promise<void> {
   await db
     .prepare('UPDATE page SET deleted_at = ?1 WHERE id = ?2 AND deleted_at IS NULL')
     .bind(Date.now(), id)
+    .run()
+}
+
+// ---- submission snapshot ---------------------------------------------------
+
+/**
+ * Store the frozen answer sheet. Re-submitting is the normal flow (student
+ * fixes their work and hands it in again), so this deliberately overwrites:
+ * one page has at most one live snapshot, and the old one is not worth
+ * keeping — the grading that referred to it is being cleared in the same
+ * statement, and a snapshot with no grading is dead weight.
+ *
+ * Returns the new submittedAt, or null when the page is gone.
+ */
+export async function saveSubmission(
+  db: D1Database,
+  id: string,
+  image: ArrayBuffer,
+): Promise<number | null> {
+  const now = Date.now()
+  const res = await db
+    .prepare(
+      'UPDATE page SET submitted_at = ?1, submission_image = ?2, grading = NULL, updated_at = ?1 ' +
+        'WHERE id = ?3 AND deleted_at IS NULL',
+    )
+    .bind(now, image, id)
+    .run()
+  if (!res.meta.changes) return null
+  return now
+}
+
+/**
+ * Raw PNG bytes, or null when the page is missing or has never been submitted.
+ *
+ * D1 hands BLOB columns back as either an ArrayBuffer or a plain array of
+ * byte values depending on the runtime, and `new Response(plainArray)`
+ * silently produces an empty body. Normalise once, here.
+ */
+export async function getSubmissionImage(db: D1Database, id: string): Promise<Uint8Array | null> {
+  const row = await db
+    .prepare('SELECT submission_image FROM page WHERE id = ?1 AND deleted_at IS NULL')
+    .bind(id)
+    .first<{ submission_image: unknown }>()
+  const value = row?.submission_image
+  if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  if (Array.isArray(value)) return Uint8Array.from(value as number[])
+  return null
+}
+
+// ---- per-page agent token --------------------------------------------------
+
+/** The jti of the page's live token, or null when none is issued. */
+export async function getPageTokenJti(db: D1Database, id: string): Promise<string | null> {
+  const row = await db
+    .prepare('SELECT token_jti FROM page WHERE id = ?1 AND deleted_at IS NULL')
+    .bind(id)
+    .first<{ token_jti: string | null }>()
+  return row?.token_jti ?? null
+}
+
+/** Issue (or re-issue) a token. False when the page does not exist. */
+export async function setPageTokenJti(db: D1Database, id: string, jti: string): Promise<boolean> {
+  const res = await db
+    .prepare('UPDATE page SET token_jti = ?1 WHERE id = ?2 AND deleted_at IS NULL')
+    .bind(jti, id)
+    .run()
+  return res.meta.changes > 0
+}
+
+/**
+ * Revoke. Clearing the jti kills the token without touching anything else —
+ * the JWT itself stays cryptographically valid, it just matches nothing.
+ * Idempotent: revoking twice is the same as once.
+ */
+export async function clearPageTokenJti(db: D1Database, id: string): Promise<void> {
+  await db
+    .prepare('UPDATE page SET token_jti = NULL WHERE id = ?1 AND deleted_at IS NULL')
+    .bind(id)
     .run()
 }
