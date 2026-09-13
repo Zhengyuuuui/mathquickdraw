@@ -20,8 +20,8 @@ export interface FormulaPanelProps {
   onContinue: () => void
 }
 
-/** Which report view the tabs are showing. */
-type ReportTab = 'grade' | 'answer'
+/** Which side of the panel the tabs are showing. */
+type PanelTab = 'question' | 'answer'
 
 /** horizontal: the whole source as one math line; vertical: stacked blocks. */
 type Layout = 'horizontal' | 'vertical'
@@ -309,7 +309,7 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
   const [draft, setDraft] = useState(saved ?? '')
   const [busy, setBusy] = useState(false)
   const [layout, setLayout] = useState<Layout>(loadLayout)
-  const [reportTab, setReportTab] = useState<ReportTab>('grade')
+  const [tab, setTab] = useState<PanelTab>('question')
   // Seed width only; during drag the handle writes inline styles directly on
   // the panel (no re-render per pointermove — dragging stays 60fps).
   const [width, setWidth] = useState<number>(loadPanelWidth)
@@ -465,7 +465,7 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
 
   // Landing on a submitted page should show the report, not an empty tab.
   useEffect(() => {
-    if (phase === 'submitted' || phase === 'graded') setReportTab('grade')
+    if (phase === 'submitted' || phase === 'graded') setTab('question')
   }, [phase])
 
   return (
@@ -477,48 +477,66 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
     >
       <div className="formula-inner">
       <header className="formula-head">
-        <span className="formula-title">公式</span>
-        <div className="formula-tabs" role="tablist" aria-label="批改与答案">
+        <div className="formula-tabs" role="tablist" aria-label="题目与答案">
           <button
             type="button"
             role="tab"
-            id="tab-grade"
-            aria-selected={reportTab === 'grade'}
-            className={`formula-tab${reportTab === 'grade' ? ' is-on' : ''}`}
-            data-testid="tab-grade"
-            onClick={() => setReportTab('grade')}
+            id="tab-question"
+            aria-selected={tab === 'question'}
+            className={`formula-tab${tab === 'question' ? ' is-on' : ''}`}
+            data-testid="tab-question"
+            onClick={() => setTab('question')}
           >
-            批改
+            题目
             {grading && <GradingOverallBadge grading={grading} marked={false} />}
           </button>
           <button
             type="button"
             role="tab"
             id="tab-answer"
-            aria-selected={reportTab === 'answer'}
-            className={`formula-tab${reportTab === 'answer' ? ' is-on' : ''}`}
+            aria-selected={tab === 'answer'}
+            className={`formula-tab${tab === 'answer' ? ' is-on' : ''}`}
             data-testid="tab-answer"
             // Before there is a grade there is no solution — leaving this
             // enabled would just be a way to ask for the answer.
             disabled={phase === 'empty' || phase === 'ready'}
-            onClick={() => setReportTab('answer')}
+            onClick={() => setTab('answer')}
           >
             答案
           </button>
         </div>
-        <button
-          type="button"
-          className="formula-layout-btn"
-          data-testid="formula-layout-toggle"
-          onClick={toggleLayout}
-          aria-pressed={layout === 'vertical'}
-          title={layout === 'horizontal' ? '切换为竖向排列（按空行分段）' : '切换为横向排列（单行滚动）'}
-        >
-          {layout === 'horizontal' ? '⇉ 横排' : '⇊ 竖排'}
-        </button>
+        {tab === 'question' && (
+          <button
+            type="button"
+            className="formula-layout-btn"
+            data-testid="formula-layout-toggle"
+            onClick={toggleLayout}
+            aria-pressed={layout === 'vertical'}
+            title={layout === 'horizontal' ? '切换为竖向排列（按空行分段）' : '切换为横向排列（单行滚动）'}
+          >
+            {layout === 'horizontal' ? '⇉ 横排' : '⇊ 竖排'}
+          </button>
+        )}
       </header>
 
-      <div className="formula-view" data-testid="page-formula-display">
+      {tab === 'answer' ? (
+        /* The answer is its own view, not a section appended under the
+           question. Mixing the two is how a reference solution ends up
+           sitting next to the thing it is supposed to be withheld from. */
+        <section className="formula-answer" role="tabpanel" aria-labelledby="tab-answer">
+          {grading ? (
+            grading.correctSolution ? (
+              <GradingSolution grading={grading} />
+            ) : (
+              <p className="grade-empty">这次批改没有给出参考解法。</p>
+            )
+          ) : (
+            <p className="grade-empty">批改完成后这里会显示参考解法。</p>
+          )}
+        </section>
+      ) : (
+        <>
+      <div className="formula-view" role="tabpanel" aria-labelledby="tab-question" data-testid="page-formula-display">
         {empty ? (
           <p className="formula-empty">
             还没有公式。在下方输入 LaTeX，例如{' '}
@@ -569,23 +587,13 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
         )}
       </div>
 
-      <section
-        className="formula-report"
-        role="tabpanel"
-        aria-labelledby={reportTab === 'grade' ? 'tab-grade' : 'tab-answer'}
-      >
-        {reportTab === 'grade' ? (
-          grading ? (
-            <GradingReport grading={grading} />
-          ) : (
-            <p className="grade-empty">
-              {phase === 'submitted' ? '已提交，等待批改。' : '还没有批改结果。'}
-            </p>
-          )
-        ) : grading ? (
-          <GradingSolution grading={grading} />
+      <section className="formula-report">
+        {grading ? (
+          <GradingReport grading={grading} />
         ) : (
-          <p className="grade-empty">批改完成后这里会显示参考解法。</p>
+          <p className="grade-empty">
+            {phase === 'submitted' ? '已提交，等待批改。' : '还没有批改结果。'}
+          </p>
         )}
       </section>
 
@@ -660,6 +668,8 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
           )}
         </div>
       </div>
+        </>
+      )}
       </div>
 
       {/* Grip sits on the panel's RIGHT edge — the seam with the paper, where

@@ -164,7 +164,7 @@ curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id> -H "X-App-Token: change-m
 | `grade-submit` / `grade-continue` | 「提交批改」/「继续作答」 |
 | `grade-preview-image` / `grade-preview-confirm` / `grade-preview-cancel` | 提交预览弹窗的图 / 确认 / 取消 |
 | `grade-result` / `grade-overall` / `grade-transcription` / `grade-first-error` | 批改结果块 / 结论徽章 / 转写 / 第一个错误 |
-| `tab-grade` / `tab-answer` | 公式栏「批改」/「答案」tab（后者在 empty/ready 时禁用） |
+| `tab-question` / `tab-answer` | 「题目」/「答案」两个独立视图（后者在 empty/ready 时禁用；选中答案时不再显示公式与输入框） |
 | `board-snapshot` | 冻结后盖在画布上的快照 `<img>` |
 | `page-settings-trigger` / `page-settings` | 顶栏齿轮 / 设置弹窗 |
 | `token-generate` / `token-revoke` / `token-value` | 生成 token / 作废 token / 当前 token 值（长期可取回） |
