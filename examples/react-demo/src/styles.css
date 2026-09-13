@@ -1404,3 +1404,15 @@ code {
   border-style: dashed;
   color: var(--ink-faint);
 }
+
+/* Formula locked while the sheet is with an agent — the question is part of
+   what was graded, so it locks and unlocks with the board. */
+.formula-input[aria-readonly="true"] {
+  background: #f7f8fa;
+  color: var(--ink-soft);
+  cursor: default;
+}
+.formula-locked {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}

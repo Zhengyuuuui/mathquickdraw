@@ -224,7 +224,6 @@ export default function App() {
         pageId={pageState.page?.id ?? ''}
         formula={pageState.page?.formula ?? null}
         phase={pageState.phase}
-        tokenJti={pageState.tokenJti}
         onIssueToken={pageState.issueToken}
         onRevokeToken={pageState.revokeToken}
         onClose={() => setSettingsOpen(false)}

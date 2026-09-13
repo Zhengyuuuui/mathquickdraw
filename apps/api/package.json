@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --port 8790",
     "deploy": "wrangler deploy",
     "migrations:local": "wrangler d1 migrations apply DB --local",
     "migrations:remote": "wrangler d1 migrations apply DB --remote"

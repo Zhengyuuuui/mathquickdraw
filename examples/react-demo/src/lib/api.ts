@@ -1,7 +1,9 @@
 // Thin fetch client for the pages API (apps/api). Types below mirror the
 // Worker contract one-for-one — change them together.
 
-const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8787'
+// 8790, not wrangler's default 8787: 8787 is a common port for other local
+// services, and colliding with one takes both down.
+const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8790'
 const TOKEN = import.meta.env.VITE_APP_TOKEN ?? ''
 
 export type PageTheme = 'light' | 'dark'
@@ -179,9 +181,24 @@ export const pagesApi = {
     return res.blob()
   },
 
-  /** Mint a per-page agent token. Returned once — it is not recoverable. */
+  /** Mint a per-page agent token, replacing any existing one. */
   issueToken: (id: string): Promise<{ token: string; jti: string }> =>
     request(`/api/pages/${encodeURIComponent(id)}/token`, { method: 'POST' }),
+
+  /**
+   * The page's live token, or null when none is issued. Signing is a pure
+   * function of (secret, pageId, jti), so this re-derives the same string
+   * every time — the token can be shown again instead of shown once.
+   */
+  currentToken: async (id: string): Promise<{ token: string; jti: string } | null> => {
+    try {
+      return await request(`/api/pages/${encodeURIComponent(id)}/token`)
+    } catch (err) {
+      // 404 is the normal "no token yet" answer, not a failure.
+      if (/HTTP 404/.test((err as Error).message)) return null
+      throw err
+    }
+  },
 
   revokeToken: (id: string): Promise<void> =>
     request(`/api/pages/${encodeURIComponent(id)}/token`, { method: 'DELETE' }),

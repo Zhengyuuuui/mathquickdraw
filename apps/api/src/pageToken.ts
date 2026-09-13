@@ -1,25 +1,31 @@
-// Per-page agent tokens: HS256 JWTs signed with Web Crypto.
+// Per-page agent tokens.
 //
 // These are NOT user sessions — there is no user login in this app. They are
 // a capability handed to an external grading agent so it can read exactly one
 // page and write exactly one field, without holding the global APP_TOKEN that
 // would let it delete pages or read everyone else's.
 //
-// No jsonwebtoken: it is ~3 statements of HMAC and a base64url, and a runtime
-// dependency for that is a bad trade.
+// Format: `qd1.<pageId>.<jti>.<sig>`, sig = base64url(HMAC-SHA256("qd1.pageId.jti")).
+//
+// Deliberately not a JWT. A JWT's one real advantage is verifying without a
+// database lookup, and that buys nothing here: revocation is "does this page
+// still name this jti", which needs the row either way. What a JWT would cost
+// is ~160 characters of base64 header+payload on every token a human has to
+// copy and paste.
+//
+// Also deliberately not expiring. The signature covers only pageId and jti,
+// so the same pair always re-derives the same string — which is what lets the
+// settings dialog show a live token again instead of "we showed it once,
+// hope you copied it". Lifetime is controlled by revocation, not a clock.
 
 const encoder = new TextEncoder()
-const decoder = new TextDecoder()
 
-/** 30 days. Long enough that a grading session never expires mid-run. */
-const TTL_SECONDS = 30 * 24 * 60 * 60
+/** Bumped only if the format itself changes; part of the signed message. */
+const VERSION = 'qd1'
 
-export interface PageTokenPayload {
-  pageId: string
-  scope: 'agent'
-  jti: string
-  iat: number
-  exp: number
+/** Revocation handle. 16 hex chars = 64 bits — far past collision risk. */
+export function newJti(): string {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 16)
 }
 
 function b64urlEncode(bytes: Uint8Array): string {
@@ -28,88 +34,57 @@ function b64urlEncode(bytes: Uint8Array): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function b64urlDecode(text: string): Uint8Array {
-  const b64 = text.replace(/-/g, '+').replace(/_/g, '/')
-  const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))
-  const out = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i)
-  return out
-}
-
 async function importKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
     encoder.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign', 'verify'],
+    ['sign'],
   )
 }
 
-/** Sign a token for one page. The caller persists `jti` — that is the revocation handle. */
-export async function signPageToken(
-  secret: string,
-  pageId: string,
-  jti: string,
-): Promise<{ token: string; payload: PageTokenPayload }> {
-  const iat = Math.floor(Date.now() / 1000)
-  const payload: PageTokenPayload = { pageId, scope: 'agent', jti, iat, exp: iat + TTL_SECONDS }
-  const head = b64urlEncode(encoder.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })))
-  const body = b64urlEncode(encoder.encode(JSON.stringify(payload)))
+async function sign(secret: string, message: string): Promise<string> {
   const key = await importKey(secret)
-  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(`${head}.${body}`))
-  return { token: `${head}.${body}.${b64urlEncode(new Uint8Array(sig))}`, payload }
+  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(message))
+  return b64urlEncode(new Uint8Array(mac))
+}
+
+/** Constant-time compare — a plain `===` on a signature leaks by timing. */
+function safeEqual(a: string, b: string): boolean {
+  const x = encoder.encode(a)
+  const y = encoder.encode(b)
+  if (x.byteLength !== y.byteLength) return false
+  return crypto.subtle.timingSafeEqual(x, y)
 }
 
 /**
- * Verify signature + expiry. Revocation (token_jti) and page binding are the
- * caller's job — they need the database and the request path.
- * Returns null on any malformation, bad signature or expiry.
+ * Derive the token for one page + jti. Deterministic: calling it twice with
+ * the same inputs returns the same string, so the client can re-display a
+ * live token without us ever having stored it.
  */
-export async function verifyPageToken(
-  token: string,
-  secret: string,
-): Promise<PageTokenPayload | null> {
+export async function signPageToken(secret: string, pageId: string, jti: string): Promise<string> {
+  return `${VERSION}.${pageId}.${jti}.${await sign(secret, `${VERSION}.${pageId}.${jti}`)}`
+}
+
+export interface VerifiedPageToken {
+  pageId: string
+  jti: string
+}
+
+/**
+ * Check shape + signature. Whether that jti is still the page's live one is
+ * the caller's job — it needs the database.
+ */
+export async function verifyPageToken(token: string, secret: string): Promise<VerifiedPageToken | null> {
   const parts = token.split('.')
-  if (parts.length !== 3) return null
-  const [head, body, sig] = parts
-
-  let parsedHead: unknown
-  let parsedBody: unknown
-  try {
-    parsedHead = JSON.parse(decoder.decode(b64urlDecode(head)))
-    parsedBody = JSON.parse(decoder.decode(b64urlDecode(body)))
-  } catch {
-    return null
-  }
-  if (
-    !parsedHead ||
-    (parsedHead as { alg?: unknown }).alg !== 'HS256' ||
-    !parsedBody ||
-    typeof parsedBody !== 'object'
-  ) {
-    return null
-  }
-
-  const key = await importKey(secret)
-  let valid: boolean
-  try {
-    valid = await crypto.subtle.verify(
-      'HMAC',
-      key,
-      b64urlDecode(sig),
-      encoder.encode(`${head}.${body}`),
-    )
-  } catch {
-    // malformed base64 in the signature segment
-    return null
-  }
-  if (!valid) return null
-
-  const p = parsedBody as Partial<PageTokenPayload>
-  if (typeof p.pageId !== 'string' || !p.pageId) return null
-  if (p.scope !== 'agent') return null
-  if (typeof p.jti !== 'string' || !p.jti) return null
-  if (typeof p.exp !== 'number' || p.exp < Math.floor(Date.now() / 1000)) return null
-  return p as PageTokenPayload
+  if (parts.length !== 4) return null
+  const [version, pageId, jti, sig] = parts
+  if (version !== VERSION) return null
+  // Page ids are [a-z0-9] (or legacy `p_<uuid>`); jtis are hex. Anything else
+  // is either a typo or someone probing, and both should fail the same way.
+  if (!/^[a-z0-9_-]{1,64}$/.test(pageId)) return null
+  if (!/^[0-9a-f]{8,32}$/.test(jti)) return null
+  if (!safeEqual(sig, await sign(secret, `${VERSION}.${pageId}.${jti}`))) return null
+  return { pageId, jti }
 }

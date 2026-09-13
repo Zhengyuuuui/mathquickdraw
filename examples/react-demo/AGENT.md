@@ -53,10 +53,18 @@ phase = !formula ? 'empty' : !submittedAt ? 'ready' : !grading ? 'submitted' : '
 
 ```bash
 curl -s -X POST http://127.0.0.1:8790/api/pages/<id>/token -H "X-App-Token: <全局token>"
-# → { "token": "eyJhbGciOi...", "jti": "…" }   token 只返回这一次
+# → { "token": "qd1.<pageId>.<jti>.<sig>", "jti": "…" }
+
+curl -s http://127.0.0.1:8790/api/pages/<id>/token -H "X-App-Token: <全局token>"
+# → 同一个 token（可反复取回）；从未签发过 → 404
 
 curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id>/token -H "X-App-Token: <全局token>"   # 作废
 ```
+
+Token 形如 `qd1.<pageId>.<jti>.<sig>`（约 76 字符，不是 JWT）：签名只覆盖 `pageId` 与 `jti`，
+所以同一对输入永远导出同一个串 —— 可随时取回，不必「只显示一次」。**没有过期时间**，
+生命周期由作废控制：清空该页的 `token_jti`，之前签发的全部立即失效。
+
 
 每页 token 能做：`GET /api/pages/:id`、`GET /api/pages/:id/submission.png`、`PATCH /api/pages/:id` **且 body 里只能有 `grading`**。
 不能：删页、建页、改名/公式/样式/快照、上传快照、签发或作废 token、访问其它页。
@@ -159,7 +167,7 @@ curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id> -H "X-App-Token: change-m
 | `tab-grade` / `tab-answer` | 公式栏「批改」/「答案」tab（后者在 empty/ready 时禁用） |
 | `board-snapshot` | 冻结后盖在画布上的快照 `<img>` |
 | `page-settings-trigger` / `page-settings` | 顶栏齿轮 / 设置弹窗 |
-| `token-generate` / `token-value` | 生成（或作废重建）token / 刚签发的 token 值 |
+| `token-generate` / `token-revoke` / `token-value` | 生成 token / 作废 token / 当前 token 值（长期可取回） |
 | `agent-prompt` / `agent-copy` / `agent-panel-idle` | 当前阶段的指令文本 / 复制按钮 / 无需介入时的提示 |
 | `agent-context` | `<script type="application/json">` 机器可读上下文（见上） |
 | `dev-mock-grade` | **仅 `vite dev`**：不经 agent 直接写入一份批改结果 |
@@ -168,6 +176,6 @@ curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id> -H "X-App-Token: change-m
 
 - 路由只有两条：`/`（首页）与 `/<页面 id>`。旧 `p_<uuid>` 与新 11 位短码都能路由，不要假设 id 格式。
 - 公式是纸外一栏（方案 B）：`PageFrame` / `usePageBoundary` 不管公式；整张纸都可写。
-- **提交后画布冻结**：`<Quickdraw readonly>`，并用上传的那张 PNG 盖住 canvas（`object-fit: contain`）。学生看到的 = agent 看到的，与视口/DPR/平移无关。「继续作答」只在本地解锁，刷新后回到 submitted —— 快照是历史，不删。
+- **提交后画布与题目一起冻结**：`<Quickdraw readonly>` + 公式 textarea `readOnly`，并用上传的那张 PNG 盖住 canvas（`object-fit: contain`）。学生看到的 = agent 看到的，与视口/DPR/平移无关。「继续作答」只在本地解锁，刷新后回到 submitted —— 快照是历史，不删。题目跟着一起锁，是因为改了题就等于让批改结果对不上它批的那道题。
 - AI 出题默认走 `MockAIAdapter`（无网络）；`DoubaoAdapter` 是未接入的桩。**前端从不调用批改模型**，批改由外部 agent 完成。
 - `packages/core`、`packages/react` 是 Quickdraw 引擎，零改动。

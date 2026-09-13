@@ -458,6 +458,15 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
   const escape = () => setDraft(saved ?? '')
 
   const empty = !draft.trim()
+  // The question is part of what was graded. Letting it be edited afterwards
+  // would leave a grade attached to a formula it never saw — so it locks with
+  // the board and unlocks on the same 「继续作答」.
+  const frozen = phase === 'submitted' || phase === 'graded'
+
+  // Landing on a submitted page should show the report, not an empty tab.
+  useEffect(() => {
+    if (phase === 'submitted' || phase === 'graded') setReportTab('grade')
+  }, [phase])
 
   return (
     <aside
@@ -611,12 +620,18 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
           className="formula-input"
           data-testid="page-formula-input"
           value={draft}
-          placeholder="LaTeX，如 \displaystyle\lim_{x\to 0}\frac{\sin x}{x}"
+          readOnly={frozen}
+          placeholder={frozen ? '已提交，题目已锁定' : 'LaTeX，如 \\displaystyle\\lim_{x\\to 0}\\frac{\\sin x}{x}'}
           rows={4}
           spellCheck={false}
           aria-label="公式 LaTeX 源码"
-          onChange={(e) => setDraft(e.target.value)}
+          aria-readonly={frozen}
+          onChange={(e) => {
+            if (frozen) return
+            setDraft(e.target.value)
+          }}
           onKeyDown={(e) => {
+            if (frozen) return
             // Enter commits; Shift+Enter is a newline — `{` and friends are
             // legal mid-typing states, so nothing is sent per keystroke.
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -628,12 +643,21 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
               escape()
             }
           }}
-          onBlur={() => void commit()}
+          onBlur={() => {
+            if (frozen) return
+            void commit()
+          }}
         />
         <div className="formula-foot">
-          {dirty ? <span className="formula-dirty">未保存</span> : null}
-          {busy ? <span className="formula-saving">保存中…</span> : null}
-          <span className="formula-hint">Enter 提交 · Shift+Enter 换行 · Esc 还原</span>
+          {frozen ? (
+            <span className="formula-locked">题目已锁定 · 「继续作答」后可修改</span>
+          ) : (
+            <>
+              {dirty ? <span className="formula-dirty">未保存</span> : null}
+              {busy ? <span className="formula-saving">保存中…</span> : null}
+              <span className="formula-hint">Enter 提交 · Shift+Enter 换行 · Esc 还原</span>
+            </>
+          )}
         </div>
       </div>
       </div>

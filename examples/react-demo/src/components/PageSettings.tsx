@@ -3,8 +3,14 @@
 // The token exists to *narrow* what an outside agent can do, not to protect
 // the page. This app has no login — anyone with the URL can open the page.
 // Saying so plainly matters more than a lock icon would.
+//
+// The token is re-displayable on purpose. Signing is a pure function of the
+// server secret plus the page's stored jti, so nothing sensitive is kept and
+// there is no "we showed it once, hope you copied it" race — a user who comes
+// back tomorrow to hand it to a different agent gets the same string.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { pagesApi } from '../lib/api.ts'
 import type { PagePhase } from '../hooks/usePage.ts'
 import { AgentPanel } from './AgentPanel.tsx'
 
@@ -13,10 +19,14 @@ export interface PageSettingsProps {
   pageId: string
   formula: string | null
   phase: PagePhase
-  tokenJti: string | null
   onIssueToken: () => Promise<string>
   onRevokeToken: () => Promise<void>
   onClose: () => void
+}
+
+interface LiveToken {
+  token: string
+  jti: string
 }
 
 export function PageSettings({
@@ -24,18 +34,40 @@ export function PageSettings({
   pageId,
   formula,
   phase,
-  tokenJti,
   onIssueToken,
   onRevokeToken,
   onClose,
 }: PageSettingsProps) {
-  // The raw token, held only until the dialog closes. Never persisted —
-  // if it were, the "shown once" claim would be a lie.
-  const [freshToken, setFreshToken] = useState<string | null>(null)
+  const [live, setLive] = useState<LiveToken | null>(null)
+  const [loaded, setLoaded] = useState(false)
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'token' | 'agent'>('token')
+
+  // Load whatever is live whenever the dialog opens. The server is the only
+  // source of truth — no jti cached in localStorage to go stale.
+  useEffect(() => {
+    if (!open || !pageId) return
+    let cancelled = false
+    setLoaded(false)
+    setError(null)
+    setCopied(false)
+    void pagesApi
+      .currentToken(pageId)
+      .then((t) => {
+        if (!cancelled) setLive(t)
+      })
+      .catch((err) => {
+        if (!cancelled) setError((err as Error).message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, pageId])
 
   // Escape dismisses, matching every other dialog in the app. Without it the
   // scrim eats pointer events and the board underneath looks dead.
@@ -44,9 +76,6 @@ export function PageSettings({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        setFreshToken(null)
-        setCopied(false)
-        setError(null)
         onClose()
       }
     }
@@ -54,52 +83,48 @@ export function PageSettings({
     return () => document.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  if (!open) return null
-
-  const close = () => {
-    setFreshToken(null)
-    setCopied(false)
-    setError(null)
-    onClose()
-  }
-
-  const issue = async () => {
+  const issue = useCallback(async () => {
     setBusy(true)
     setError(null)
     try {
-      setFreshToken(await onIssueToken())
+      const token = await onIssueToken()
+      setLive({ token, jti: '' })
+      setCopied(false)
     } catch (err) {
       setError((err as Error).message)
     } finally {
       setBusy(false)
     }
-  }
+  }, [onIssueToken])
 
-  const revokeAndReissue = async () => {
+  const revoke = useCallback(async () => {
     setBusy(true)
     setError(null)
     try {
       await onRevokeToken()
-      setFreshToken(await onIssueToken())
+      setLive(null)
+      setCopied(false)
     } catch (err) {
       setError((err as Error).message)
     } finally {
       setBusy(false)
     }
-  }
+  }, [onRevokeToken])
 
-  const copyToken = async () => {
-    if (!freshToken) return
+  const copyToken = useCallback(async () => {
+    if (!live) return
     try {
-      await navigator.clipboard.writeText(freshToken)
+      await navigator.clipboard.writeText(live.token)
       setCopied(true)
     } catch {
       setError('复制失败，请手动选中下方文本复制')
     }
-  }
+  }, [live])
+
+  if (!open) return null
 
   return (
-    <div className="dialog-scrim" role="presentation" onClick={close}>
+    <div className="dialog-scrim" role="presentation" onClick={onClose}>
       <div
         className="dialog page-settings"
         role="dialog"
@@ -110,7 +135,7 @@ export function PageSettings({
       >
         <div className="dialog-head">
           <h2>页面设置</h2>
-          <button type="button" className="dialog-x" aria-label="关闭" onClick={close}>
+          <button type="button" className="dialog-x" aria-label="关闭" onClick={onClose}>
             ×
           </button>
         </div>
@@ -138,33 +163,27 @@ export function PageSettings({
 
         {tab === 'token' ? (
           <div className="settings-body">
-            {freshToken ? (
+            {!loaded ? (
+              <p className="token-none">读取中…</p>
+            ) : live ? (
               <>
-                <p className="token-warn" role="alert">
-                  关闭后无法再次查看，请立即复制。
-                </p>
                 <div className="token-row">
                   <code className="token-value" data-testid="token-value">
-                    {freshToken}
+                    {live.token}
                   </code>
                   <button type="button" className="btn btn-primary" onClick={copyToken}>
                     {copied ? '已复制' : '复制'}
                   </button>
                 </div>
-              </>
-            ) : tokenJti ? (
-              <>
-                <p className="token-live">
-                  已有生效中的 token（jti <code>{tokenJti.slice(0, 8)}</code>）。原 token 不可再查看。
-                </p>
+                <p className="token-none">这个 token 长期有效，随时可以回来查看和复制。</p>
                 <button
                   type="button"
                   className="btn"
-                  data-testid="token-generate"
+                  data-testid="token-revoke"
                   disabled={busy}
-                  onClick={revokeAndReissue}
+                  onClick={revoke}
                 >
-                  {busy ? '处理中…' : '作废并重新生成'}
+                  {busy ? '处理中…' : '作废（立即失效）'}
                 </button>
               </>
             ) : (
@@ -187,7 +206,7 @@ export function PageSettings({
             <p className="token-scope">
               这个 token <strong>只能读本页、只能写本页的批改结果</strong>：不能删页、不能改公式、
               不能改名字、不能看别的页。它限制的是 agent 的权限，<strong>不是页面的访问控制</strong> ——
-              本应用目前没有用户登录，拿到 URL 就能打开这一页。
+              本应用目前没有用户登录，拿到 URL 就能打开这一页。不需要了就点「作废」，立即失效。
             </p>
           </div>
         ) : (

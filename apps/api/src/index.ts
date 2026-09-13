@@ -20,7 +20,7 @@ import {
   saveSubmission,
   setPageTokenJti,
 } from './pages'
-import { signPageToken, verifyPageToken } from './pageToken'
+import { newJti, signPageToken, verifyPageToken } from './pageToken'
 import { HttpError, MAX_SUBMISSION_BYTES } from './validate'
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024
@@ -62,6 +62,9 @@ export default {
 
       if (pageId) {
         if (sub === 'token') {
+          // Re-display is app-only too: it mints a working credential, so a
+          // page token must not be able to hand out another one for itself.
+          if (request.method === 'GET') return await currentToken(env, pageId, cors)
           if (request.method === 'POST') return await issueToken(env, pageId, cors)
           if (request.method === 'DELETE') {
             await clearPageTokenJti(env.DB, pageId)
@@ -175,12 +178,13 @@ async function authenticate(request: Request, env: Env, pageId: string | null): 
   }
 
   const payload = await verifyPageToken(token, env.JWT_SECRET)
-  if (!payload) return { ok: false, code: 'INVALID_PAGE_TOKEN', message: '每页 token 无效或已过期' }
+  if (!payload) return { ok: false, code: 'INVALID_PAGE_TOKEN', message: '每页 token 无效' }
   if (pageId && payload.pageId !== pageId) {
     return { ok: false, code: 'INVALID_PAGE_TOKEN', message: '每页 token 与请求的页面不匹配' }
   }
 
-  // Revocation: the JWT still verifies, but the page no longer names this jti.
+  // Revocation: the signature still checks out, but the page no longer names
+  // this jti. Clearing one column kills every token ever signed for the page.
   const live = await getPageTokenJti(env.DB, payload.pageId)
   if (!live || live !== payload.jti) {
     return { ok: false, code: 'INVALID_PAGE_TOKEN', message: '每页 token 已作废' }
@@ -288,14 +292,26 @@ async function issueToken(env: Env, pageId: string, cors: Headers): Promise<Resp
     console.warn('[quickdraw-api] 无法签发每页 token：JWT_SECRET 未设置')
     return error(500, 'INTERNAL', '服务端未配置 JWT_SECRET', cors)
   }
-  const jti = crypto.randomUUID()
+  const jti = newJti()
   // Persist first: a token that verifies but matches no jti is a confusing
   // failure mode, and there is no window where a signed token is unusable.
   if (!(await setPageTokenJti(env.DB, pageId, jti))) {
     return error(404, 'NOT_FOUND', '页面不存在', cors)
   }
-  const { token } = await signPageToken(env.JWT_SECRET, pageId, jti)
-  // The token is returned exactly once. It is not recoverable afterwards —
-  // only the jti is stored, and that is just the revocation handle.
-  return json({ token, jti }, 200, cors)
+  return json({ token: await signPageToken(env.JWT_SECRET, pageId, jti), jti }, 200, cors)
+}
+
+/**
+ * Re-derive the page's live token. Signing is a pure function of
+ * (secret, pageId, jti), so nothing sensitive is stored — only the jti, which
+ * is the revocation handle. This is what makes the token re-displayable
+ * instead of a one-time secret the user has to race to copy.
+ */
+async function currentToken(env: Env, pageId: string, cors: Headers): Promise<Response> {
+  if (!env.JWT_SECRET) {
+    return error(500, 'INTERNAL', '服务端未配置 JWT_SECRET', cors)
+  }
+  const jti = await getPageTokenJti(env.DB, pageId)
+  if (!jti) return error(404, 'NOT_FOUND', '该页没有生效中的 token', cors)
+  return json({ token: await signPageToken(env.JWT_SECRET, pageId, jti), jti }, 200, cors)
 }

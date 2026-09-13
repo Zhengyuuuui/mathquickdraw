@@ -67,8 +67,6 @@ export interface UsePageResult {
   continueWriting: () => void
   /** Dev-only: inject a grading without an agent, to exercise the UI. */
   setGradingLocal: (grading: GradingResult) => void
-  /** jti of this page's live agent token, or null. */
-  tokenJti: string | null
   issueToken: () => Promise<string>
   revokeToken: () => Promise<void>
   /** Apply a camera deferred while the editor was still mounting. */
@@ -81,8 +79,7 @@ export interface UsePageResult {
   persist: () => void
 }
 
-function toView(rec: PageRecord): PageView {
-  return {
+function toView(rec: PageRecord): PageView {  return {
     id: rec.id,
     name: rec.name,
     style: rec.style,
@@ -91,25 +88,6 @@ function toView(rec: PageRecord): PageView {
     updatedAt: rec.updatedAt,
     submittedAt: rec.submittedAt,
     grading: rec.grading,
-  }
-}
-
-/** jti is not secret, just a lookup key — remembering it lets the settings
- *  dialog show "a token is live" without ever holding the token itself. */
-const jtiKey = (pageId: string) => `quickdraw.pageTokenJti.${pageId}`
-function loadJti(pageId: string): string | null {
-  try {
-    return localStorage.getItem(jtiKey(pageId))
-  } catch {
-    return null
-  }
-}
-function storeJti(pageId: string, jti: string | null): void {
-  try {
-    if (jti) localStorage.setItem(jtiKey(pageId), jti)
-    else localStorage.removeItem(jtiKey(pageId))
-  } catch {
-    // private mode — the settings dialog just shows "none" next time
   }
 }
 
@@ -129,7 +107,6 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [tokenJti, setTokenJti] = useState<string | null>(null)
 
   const pageRef = useRef<PageView | null>(null)
   pageRef.current = page
@@ -343,7 +320,6 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
         appliedTo.current = null // a different page must re-frame the editor
         syncCamera()
         setPage(toView(rec))
-        setTokenJti(loadJti(rec.id))
         setError(null)
         return true
       } catch (err) {
@@ -429,9 +405,7 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
   const issueToken = useCallback(async (): Promise<string> => {
     const id = pageRef.current?.id
     if (!id) throw new Error('没有打开的页面')
-    const { token, jti } = await pagesApi.issueToken(id)
-    storeJti(id, jti)
-    setTokenJti(jti)
+    const { token } = await pagesApi.issueToken(id)
     return token
   }, [])
 
@@ -439,8 +413,6 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
     const id = pageRef.current?.id
     if (!id) return
     await pagesApi.revokeToken(id)
-    storeJti(id, null)
-    setTokenJti(null)
   }, [])
 
   // ---- bootstrap -----------------------------------------------------------
@@ -462,7 +434,6 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
     submit,
     continueWriting,
     setGradingLocal,
-    tokenJti,
     issueToken,
     revokeToken,
     syncCamera,

@@ -7,6 +7,8 @@ export interface Env {
   /**
    * HMAC secret for per-page agent tokens. Absent = every X-Page-Token fails
    * (logged, never silently allowed) — the tokens are useless without it.
+   * Name kept as JWT_SECRET for continuity with existing deployments; the
+   * tokens have not been JWTs since they became re-displayable.
    */
   JWT_SECRET?: string
   /** Sole origin allowed by CORS. Defaults to the Vite dev server. */
