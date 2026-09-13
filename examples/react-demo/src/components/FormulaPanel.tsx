@@ -552,51 +552,56 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
         /* The answer is its own view, not a section appended under the
            question. Mixing the two is how a reference solution ends up
            sitting next to the thing it is supposed to be withheld from. */
-        <section className="formula-answer" role="tabpanel" aria-labelledby="tab-answer">
-          {grading ? (
-            <>
-              {grading.correctSolution ? (
+        <>
+          <section className="formula-answer" role="tabpanel" aria-labelledby="tab-answer">
+            {grading ? (
+              grading.correctSolution ? (
                 <GradingSolution grading={grading} />
               ) : (
-                <p className="grade-empty">这次批改没有给出参考解法。可以在下方直接补写。</p>
-              )}
+                <p className="grade-empty">这次批改没有给出参考解法，可以在下方直接补写。</p>
+              )
+            ) : (
+              <p className="grade-empty">批改完成后这里会显示参考解法。</p>
+            )}
+          </section>
 
-              <div className="solution-editor">
-                <textarea
-                  ref={solRef}
-                  className="formula-input"
-                  data-testid="solution-input"
-                  value={solDraft}
-                  placeholder={'参考解法（LaTeX），如 \\displaystyle\\lim_{x\\to 0}\\frac{\\sin x}{x}=1'}
-                  rows={5}
-                  spellCheck={false}
-                  aria-label="参考解法 LaTeX 源码"
-                  onChange={(e) => setSolDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    // Same contract as the question editor: Enter commits,
-                    // Shift+Enter is a newline, Esc reverts.
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault()
-                      void commitSolution()
-                      solRef.current?.blur()
-                    } else if (e.key === 'Escape') {
-                      e.preventDefault()
-                      setSolDraft(savedSolution)
-                    }
-                  }}
-                  onBlur={() => void commitSolution()}
-                />
-                <div className="formula-foot">
-                  {solDirty ? <span className="formula-dirty">未保存</span> : null}
-                  {solBusy ? <span className="formula-saving">保存中…</span> : null}
-                  <span className="formula-hint">Enter 提交 · Shift+Enter 换行 · Esc 还原</span>
-                </div>
+          {/* Pinned below the scroll area, exactly like the question's editor.
+               Inside it a long solution would push the box off-screen and the
+               editor would look like it had never been added. */}
+          {grading && (
+            <div className="solution-editor">
+              <textarea
+                ref={solRef}
+                className="formula-input"
+                data-testid="solution-input"
+                value={solDraft}
+                placeholder={'参考解法（LaTeX），如 \\displaystyle\\lim_{x\\to 0}\\frac{\\sin x}{x}=1'}
+                rows={5}
+                spellCheck={false}
+                aria-label="参考解法 LaTeX 源码"
+                onChange={(e) => setSolDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  // Same contract as the question editor: Enter commits,
+                  // Shift+Enter is a newline, Esc reverts.
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    void commitSolution()
+                    solRef.current?.blur()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setSolDraft(savedSolution)
+                  }
+                }}
+                onBlur={() => void commitSolution()}
+              />
+              <div className="formula-foot">
+                {solDirty ? <span className="formula-dirty">未保存</span> : null}
+                {solBusy ? <span className="formula-saving">保存中…</span> : null}
+                <span className="formula-hint">Enter 提交 · Shift+Enter 换行 · Esc 还原</span>
               </div>
-            </>
-          ) : (
-            <p className="grade-empty">批改完成后这里会显示参考解法。</p>
+            </div>
           )}
-        </section>
+        </>
       ) : (
         <>
       <div className="formula-view" role="tabpanel" aria-labelledby="tab-question" data-testid="page-formula-display">

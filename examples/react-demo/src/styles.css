@@ -1421,11 +1421,10 @@ code {
   padding: 14px;
 }
 
-/* Editor under the reference solution. Separate from .formula-editor so the
-   two can be spaced independently — the answer view has no submit row. */
+/* Editor under the reference solution. A sibling of the scrollable .formula-answer,
+   not a child of it — same footing as the question's editor, so a long solution
+   scrolls behind it instead of pushing it off-screen. */
 .solution-editor {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  flex: 0 0 auto;
 }
 .solution-editor .formula-input { width: 100%; }
