@@ -11,9 +11,87 @@ npm run dev            # Vite 前端，http://localhost:5173
 
 首次需先应用 D1 迁移：`cd apps/api && npx wrangler d1 migrations apply DB --local`
 
-## Agent 主路径：HTTP API，不是 DOM
+## Agent 主路径：读 agent-context + PATCH API，不必驱动 DOM
+
+页面里有一个机器可读的上下文岛，一次查询拿到全部信息：
+
+```js
+JSON.parse(document.querySelector('#agent-context').textContent)
+// { phase, pageId, pageUrl, latex, apiBase, submissionPng, systemPrompt }
+```
+
+**它不含 token** —— 提示词会被截图，token 由用户在「页面设置」里生成后单独交给 agent。
 
 建页 / 写公式 / 改名 / 删页，全部走 API。DOM 选择器只是浏览器自动化的兜底。
+
+所有请求带鉴权头，二选一：
+
+- `X-App-Token` —— 全局 token，全权限。本地在 `apps/api/.dev.vars`。
+- `X-Page-Token` —— 每页 token，**只能读本页、只能写本页的 grading**。
+
+### 阶段状态机
+
+```
+empty        无公式
+   ↓  agent 出题 / 手填
+ready        有公式，可写
+   ↓  提交（前端渲染快照并上传）
+submitted    已冻结，等批改
+   ↓  agent PATCH grading
+graded       有批改结果（仍冻结）
+   ↓  学生点「继续作答」
+ready        解冻（仅本次会话；刷新后回到 submitted）
+```
+
+纯派生，不落库：
+
+```
+phase = !formula ? 'empty' : !submittedAt ? 'ready' : !grading ? 'submitted' : 'graded'
+```
+
+### 每页 Token
+
+```bash
+curl -s -X POST http://127.0.0.1:8790/api/pages/<id>/token -H "X-App-Token: <全局token>"
+# → { "token": "eyJhbGciOi...", "jti": "…" }   token 只返回这一次
+
+curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id>/token -H "X-App-Token: <全局token>"   # 作废
+```
+
+每页 token 能做：`GET /api/pages/:id`、`GET /api/pages/:id/submission.png`、`PATCH /api/pages/:id` **且 body 里只能有 `grading`**。
+不能：删页、建页、改名/公式/样式/快照、上传快照、签发或作废 token、访问其它页。
+带越权字段 → `403 FORBIDDEN`；token 无效/过期/已作废/页面不匹配 → `401 INVALID_PAGE_TOKEN`。
+
+### 提交快照
+
+```bash
+curl -s -X POST http://127.0.0.1:8790/api/pages/<id>/submission \
+  -H "X-App-Token: <全局token>" -F "image=@sheet.png;type=image/png"
+# → { "submittedAt": 1726000000000 }   同时把 grading 置空（旧反馈作废）
+
+curl -s -o sheet.png http://127.0.0.1:8790/api/pages/<id>/submission.png -H "X-Page-Token: <每页token>"
+# 无快照 → 404。>6MB → 413
+```
+
+### 写批改（PATCH，`grading` 传 null 表示清除）
+
+```bash
+curl -s -X PATCH http://127.0.0.1:8790/api/pages/<id> \
+  -H "X-Page-Token: <每页token>" -H "Content-Type: application/json" \
+  -d '{
+    "grading": {
+      "readable": true,
+      "overall": "correct",
+      "transcription": "…",
+      "firstError": null,
+      "correctSolution": "…",
+      "teacherComment": "…"
+    }
+  }'
+```
+
+`overall` ∈ `correct | incorrect | partial | unreadable`。服务端会归一化：非法枚举值在 `readable=false` 时落 `unreadable`、否则落 `incorrect`；`gradedAt` 一律用服务端时钟；三个长文本各截断到 8000 字符。
+
 
 所有请求带 `X-App-Token` 头。本地 token 在 `apps/api/.dev.vars`（`APP_TOKEN=change-me`），前端自己的 token 在 `examples/react-demo/.env.local`（`VITE_APP_TOKEN`），两者要与 `VITE_API_BASE_URL` 指向的实例一致。
 
@@ -75,10 +153,21 @@ curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id> -H "X-App-Token: change-m
 | `page-back-home` | 返回首页 |
 | `toolbar-undo` / `toolbar-redo` / `toolbar-clear` | 工具栏撤销 / 重做 / 清空 |
 | `page-not-found` / `page-not-found-home` | 深链 404 提示 / 其「返回首页」按钮 |
+| `grade-submit` / `grade-continue` | 「提交批改」/「继续作答」 |
+| `grade-preview-image` / `grade-preview-confirm` / `grade-preview-cancel` | 提交预览弹窗的图 / 确认 / 取消 |
+| `grade-result` / `grade-overall` / `grade-transcription` / `grade-first-error` | 批改结果块 / 结论徽章 / 转写 / 第一个错误 |
+| `tab-grade` / `tab-answer` | 公式栏「批改」/「答案」tab（后者在 empty/ready 时禁用） |
+| `board-snapshot` | 冻结后盖在画布上的快照 `<img>` |
+| `page-settings-trigger` / `page-settings` | 顶栏齿轮 / 设置弹窗 |
+| `token-generate` / `token-value` | 生成（或作废重建）token / 刚签发的 token 值 |
+| `agent-prompt` / `agent-copy` / `agent-panel-idle` | 当前阶段的指令文本 / 复制按钮 / 无需介入时的提示 |
+| `agent-context` | `<script type="application/json">` 机器可读上下文（见上） |
+| `dev-mock-grade` | **仅 `vite dev`**：不经 agent 直接写入一份批改结果 |
 
 ## 约定
 
 - 路由只有两条：`/`（首页）与 `/<页面 id>`。旧 `p_<uuid>` 与新 11 位短码都能路由，不要假设 id 格式。
 - 公式是纸外一栏（方案 B）：`PageFrame` / `usePageBoundary` 不管公式；整张纸都可写。
-- AI 出题默认走 `MockAIAdapter`（无网络）；`DoubaoAdapter` 是未接入的桩。
+- **提交后画布冻结**：`<Quickdraw readonly>`，并用上传的那张 PNG 盖住 canvas（`object-fit: contain`）。学生看到的 = agent 看到的，与视口/DPR/平移无关。「继续作答」只在本地解锁，刷新后回到 submitted —— 快照是历史，不删。
+- AI 出题默认走 `MockAIAdapter`（无网络）；`DoubaoAdapter` 是未接入的桩。**前端从不调用批改模型**，批改由外部 agent 完成。
 - `packages/core`、`packages/react` 是 Quickdraw 引擎，零改动。

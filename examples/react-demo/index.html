@@ -11,6 +11,11 @@
 </head>
 <body>
   <div id="root"></div>
+  <!-- Machine-readable context for the external grading agent. Filled by
+       App.tsx on every phase change; one DOM query gives an agent the page
+       id, URL, formula, API base and the prompt to follow. Never holds a
+       token — prompts get screenshotted. -->
+  <script type="application/json" data-testid="agent-context" id="agent-context"></script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

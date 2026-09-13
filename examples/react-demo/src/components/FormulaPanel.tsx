@@ -7,12 +7,21 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import katex from 'katex'
-import type { PageMeta } from '../lib/api.ts'
+import type { GradingResult, PageMeta } from '../lib/api.ts'
+import type { PagePhase } from '../hooks/usePage.ts'
+import { GradingOverallBadge, GradingReport, GradingSolution } from './GradingReport.tsx'
 
 export interface FormulaPanelProps {
   page: PageMeta | null
+  phase: PagePhase
+  grading: GradingResult | null
   onFormula: (latex: string | null) => Promise<void>
+  onSubmit: () => void
+  onContinue: () => void
 }
+
+/** Which report view the tabs are showing. */
+type ReportTab = 'grade' | 'answer'
 
 /** horizontal: the whole source as one math line; vertical: stacked blocks. */
 type Layout = 'horizontal' | 'vertical'
@@ -294,12 +303,13 @@ function measureBlockWidth(html: string): number {
   return w
 }
 
-export function FormulaPanel({ page, onFormula }: FormulaPanelProps) {
+export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onContinue }: FormulaPanelProps) {
   // The saved value from the server; `draft` is what the user is typing.
   const saved = page?.formula ?? null
   const [draft, setDraft] = useState(saved ?? '')
   const [busy, setBusy] = useState(false)
   const [layout, setLayout] = useState<Layout>(loadLayout)
+  const [reportTab, setReportTab] = useState<ReportTab>('grade')
   // Seed width only; during drag the handle writes inline styles directly on
   // the panel (no re-render per pointermove — dragging stays 60fps).
   const [width, setWidth] = useState<number>(loadPanelWidth)
@@ -459,6 +469,34 @@ export function FormulaPanel({ page, onFormula }: FormulaPanelProps) {
       <div className="formula-inner">
       <header className="formula-head">
         <span className="formula-title">公式</span>
+        <div className="formula-tabs" role="tablist" aria-label="批改与答案">
+          <button
+            type="button"
+            role="tab"
+            id="tab-grade"
+            aria-selected={reportTab === 'grade'}
+            className={`formula-tab${reportTab === 'grade' ? ' is-on' : ''}`}
+            data-testid="tab-grade"
+            onClick={() => setReportTab('grade')}
+          >
+            批改
+            {grading && <GradingOverallBadge grading={grading} marked={false} />}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-answer"
+            aria-selected={reportTab === 'answer'}
+            className={`formula-tab${reportTab === 'answer' ? ' is-on' : ''}`}
+            data-testid="tab-answer"
+            // Before there is a grade there is no solution — leaving this
+            // enabled would just be a way to ask for the answer.
+            disabled={phase === 'empty' || phase === 'ready'}
+            onClick={() => setReportTab('answer')}
+          >
+            答案
+          </button>
+        </div>
         <button
           type="button"
           className="formula-layout-btn"
@@ -519,6 +557,51 @@ export function FormulaPanel({ page, onFormula }: FormulaPanelProps) {
             <pre className="formula-raw">{allRaw}</pre>
             <p className="formula-error" role="status">LaTeX 无法解析</p>
           </div>
+        )}
+      </div>
+
+      <section
+        className="formula-report"
+        role="tabpanel"
+        aria-labelledby={reportTab === 'grade' ? 'tab-grade' : 'tab-answer'}
+      >
+        {reportTab === 'grade' ? (
+          grading ? (
+            <GradingReport grading={grading} />
+          ) : (
+            <p className="grade-empty">
+              {phase === 'submitted' ? '已提交，等待批改。' : '还没有批改结果。'}
+            </p>
+          )
+        ) : grading ? (
+          <GradingSolution grading={grading} />
+        ) : (
+          <p className="grade-empty">批改完成后这里会显示参考解法。</p>
+        )}
+      </section>
+
+      <div className="formula-actions">
+        {phase === 'ready' || phase === 'empty' ? (
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            data-testid="grade-submit"
+            disabled={phase === 'empty'}
+            title={phase === 'empty' ? '先填写题目' : '冻结答题纸并交给 agent 批改'}
+            onClick={onSubmit}
+          >
+            提交批改
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-block"
+            data-testid="grade-continue"
+            title="解锁画布继续作答。注意：这只是本次会话内解锁，刷新后仍显示为已提交；想真正开始新一轮，再次提交即可（会生成新快照并清掉旧批改）。"
+            onClick={onContinue}
+          >
+            继续作答
+          </button>
         )}
       </div>
 

@@ -15,9 +15,10 @@ export interface CommandBarProps {
   onHome: () => void
   onRename: (name: string) => void
   onStyle: (patch: { grid?: PageGrid; theme?: PageTheme; size?: PageSize }) => void
+  onSettings: () => void
 }
 
-export function CommandBar({ page, saving, onHome, onRename, onStyle }: CommandBarProps) {
+export function CommandBar({ page, saving, onHome, onRename, onStyle, onSettings }: CommandBarProps) {
   const [name, setName] = useState(page?.name ?? '')
   const [styleOpen, setStyleOpen] = useState(false)
   const [sizeAlert, setSizeAlert] = useState<string | null>(null)
@@ -134,6 +135,22 @@ export function CommandBar({ page, saving, onHome, onRename, onStyle }: CommandB
         </div>
 
         {saving && <span className="cmd-saving">保存中…</span>}
+
+        <button
+          type="button"
+          className="cmd-settings"
+          data-testid="page-settings-trigger"
+          aria-haspopup="dialog"
+          title="页面设置（Agent Token 与指令）"
+          onClick={onSettings}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <span className="sr-only">页面设置</span>
+        </button>
       </div>
 
       <AlertDialog open={!!sizeAlert} message={sizeAlert ?? ''} onConfirm={() => setSizeAlert(null)} />

@@ -8,13 +8,42 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Camera, Editor, Snapshot, Store } from '@quickdrawjs/react'
 import { pagesApi } from '../lib/api.ts'
 import { framePageCamera } from '../lib/pageSize.ts'
-import type { PageMeta, PageRecord, PageStyle } from '../lib/api.ts'
+import type { GradingResult, PageMeta, PageRecord, PageStyle } from '../lib/api.ts'
 
 const SAVE_DEBOUNCE_MS = 400
 const FORMULA_DEBOUNCE_MS = 400
 
+/**
+ * Where the page is in the write → submit → grade loop. Purely derived —
+ * storing it would let it drift from the fields it describes.
+ *
+ *   empty     no formula yet
+ *   ready     formula, not submitted — writable
+ *   submitted frozen, waiting on the agent
+ *   graded    frozen, feedback in
+ */
+export type PagePhase = 'empty' | 'ready' | 'submitted' | 'graded'
+
+export function phaseOf(page: PageView | null): PagePhase {
+  if (!page) return 'empty'
+  if (!page.formula) return 'empty'
+  if (!page.submittedAt) return 'ready'
+  return page.grading ? 'graded' : 'submitted'
+}
+
+/**
+ * PageMeta plus the two fields only the detail endpoint carries. The list
+ * endpoint deliberately omits them (no grading on a card, no megabyte
+ * snapshots), so the board keeps its own wider view.
+ */
+export interface PageView extends PageMeta {
+  submittedAt: number | null
+  grading: GradingResult | null
+}
+
 export interface UsePageResult {
-  page: PageMeta | null
+  page: PageView | null
+  phase: PagePhase
   loading: boolean
   saving: boolean
   error: string | null
@@ -28,6 +57,20 @@ export interface UsePageResult {
    * can never interleave with a snapshot PATCH mid-flight.
    */
   setFormula: (latex: string | null) => Promise<void>
+  /** Upload the frozen sheet. Clears any previous grading. */
+  submit: (image: Blob) => Promise<void>
+  /**
+   * Unlock the board again. Local only — the snapshot stays on the server as
+   * the record of what was handed in, and a reload deliberately returns to
+   * `submitted`. See the button's title.
+   */
+  continueWriting: () => void
+  /** Dev-only: inject a grading without an agent, to exercise the UI. */
+  setGradingLocal: (grading: GradingResult) => void
+  /** jti of this page's live agent token, or null. */
+  tokenJti: string | null
+  issueToken: () => Promise<string>
+  revokeToken: () => Promise<void>
   /** Apply a camera deferred while the editor was still mounting. */
   syncCamera: () => void
   /**
@@ -38,7 +81,7 @@ export interface UsePageResult {
   persist: () => void
 }
 
-function toMeta(rec: PageRecord): PageMeta {
+function toView(rec: PageRecord): PageView {
   return {
     id: rec.id,
     name: rec.name,
@@ -46,6 +89,27 @@ function toMeta(rec: PageRecord): PageMeta {
     formula: rec.formula,
     createdAt: rec.createdAt,
     updatedAt: rec.updatedAt,
+    submittedAt: rec.submittedAt,
+    grading: rec.grading,
+  }
+}
+
+/** jti is not secret, just a lookup key — remembering it lets the settings
+ *  dialog show "a token is live" without ever holding the token itself. */
+const jtiKey = (pageId: string) => `quickdraw.pageTokenJti.${pageId}`
+function loadJti(pageId: string): string | null {
+  try {
+    return localStorage.getItem(jtiKey(pageId))
+  } catch {
+    return null
+  }
+}
+function storeJti(pageId: string, jti: string | null): void {
+  try {
+    if (jti) localStorage.setItem(jtiKey(pageId), jti)
+    else localStorage.removeItem(jtiKey(pageId))
+  } catch {
+    // private mode — the settings dialog just shows "none" next time
   }
 }
 
@@ -60,14 +124,24 @@ function pageDirective(rec: PageRecord): 'fit' | { page: { w: number; h: number 
 }
 
 export function usePage(store: Store, editorRef: { current: Editor | null }): UsePageResult {
-  const [page, setPage] = useState<PageMeta | null>(null)
+  const [page, setPage] = useState<PageView | null>(null)
   // False until someone calls open() — nothing is loading on a fresh mount.
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tokenJti, setTokenJti] = useState<string | null>(null)
 
-  const pageRef = useRef<PageMeta | null>(null)
+  const pageRef = useRef<PageView | null>(null)
   pageRef.current = page
+
+  /**
+   * Adopt a metadata PATCH response. The list-shaped response carries no
+   * submittedAt/grading, so it is merged over the current view rather than
+   * replacing it — a rename must not make the page look un-submitted.
+   */
+  const adoptMeta = useCallback((meta: PageMeta) => {
+    setPage((prev) => (prev && prev.id === meta.id ? { ...prev, ...meta } : prev))
+  }, [])
 
   const saveTimer = useRef(0)
   const saveScheduled = useRef(false)
@@ -173,7 +247,7 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
         const meta = await pagesApi.patch(id, { formula: latex })
         if (mounted.current) {
           // Only adopt the response when it is still this page's row.
-          if (pageRef.current?.id === id) setPage((prev) => (prev?.id === id ? meta : prev))
+          if (pageRef.current?.id === id) adoptMeta(meta)
           setError(null)
         }
       } catch (err) {
@@ -268,7 +342,8 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
         loadedCamera.current = rec.camera ?? pageDirective(rec)
         appliedTo.current = null // a different page must re-frame the editor
         syncCamera()
-        setPage(toMeta(rec))
+        setPage(toView(rec))
+        setTokenJti(loadJti(rec.id))
         setError(null)
         return true
       } catch (err) {
@@ -294,12 +369,12 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
     const id = pageRef.current?.id
     if (!id) return
     try {
-      setPage(await pagesApi.patch(id, { name }))
+      adoptMeta(await pagesApi.patch(id, { name }))
       setError(null)
     } catch (err) {
       setError(`重命名失败：${(err as Error).message}`)
     }
-  }, [])
+  }, [adoptMeta])
 
   const setStyle = useCallback(async (patch: Partial<PageStyle>) => {
     const prev = pageRef.current
@@ -307,12 +382,65 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
     // Optimistic: the canvas should move the instant the user picks a grid.
     setPage({ ...prev, style: { ...prev.style, ...patch } })
     try {
-      setPage(await pagesApi.patch(prev.id, { style: patch }))
+      adoptMeta(await pagesApi.patch(prev.id, { style: patch }))
       setError(null)
     } catch (err) {
       setPage(prev)
       setError(`保存样式失败：${(err as Error).message}`)
     }
+  }, [adoptMeta])
+
+  // ---- submit / grade ------------------------------------------------------
+
+  const submit = useCallback(async (image: Blob) => {
+    const prev = pageRef.current
+    if (!prev) return
+    // Write any outstanding ink first: the PNG was rendered from the canvas a
+    // moment ago, and a stroke that landed after it must not be saved on top
+    // of a snapshot that never contained it.
+    persistNow()
+    try {
+      const { submittedAt } = await pagesApi.submit(prev.id, image)
+      // Local grading is dropped with the old sheet — feedback about work
+      // that has since changed is worse than no feedback.
+      setPage({ ...prev, submittedAt, grading: null })
+      setError(null)
+    } catch (err) {
+      setError(`提交失败：${(err as Error).message}`)
+      throw err
+    }
+  }, [persistNow])
+
+  const continueWriting = useCallback(() => {
+    const prev = pageRef.current
+    if (!prev?.submittedAt) return
+    // Local only, on purpose: the uploaded snapshot is the record of what was
+    // handed in and stays on the server. A reload therefore returns to
+    // `submitted` — which is also how "re-submit" gets a fresh sheet.
+    setPage({ ...prev, submittedAt: null })
+  }, [])
+
+  const setGradingLocal = useCallback((grading: GradingResult) => {
+    const prev = pageRef.current
+    if (!prev) return
+    setPage({ ...prev, grading })
+  }, [])
+
+  const issueToken = useCallback(async (): Promise<string> => {
+    const id = pageRef.current?.id
+    if (!id) throw new Error('没有打开的页面')
+    const { token, jti } = await pagesApi.issueToken(id)
+    storeJti(id, jti)
+    setTokenJti(jti)
+    return token
+  }, [])
+
+  const revokeToken = useCallback(async () => {
+    const id = pageRef.current?.id
+    if (!id) return
+    await pagesApi.revokeToken(id)
+    storeJti(id, null)
+    setTokenJti(null)
   }, [])
 
   // ---- bootstrap -----------------------------------------------------------
@@ -320,5 +448,24 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
   // auto-opening "the most recent page" here would skip the picker entirely.
   // With no page open, `page` is null and the autosave listener no-ops.
 
-  return { page, loading, saving, error, open, create, rename, setStyle, setFormula, syncCamera, persist: persistNow }
+  return {
+    page,
+    phase: phaseOf(page),
+    loading,
+    saving,
+    error,
+    open,
+    create,
+    rename,
+    setStyle,
+    setFormula,
+    submit,
+    continueWriting,
+    setGradingLocal,
+    tokenJti,
+    issueToken,
+    revokeToken,
+    syncCamera,
+    persist: persistNow,
+  }
 }
