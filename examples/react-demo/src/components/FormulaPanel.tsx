@@ -18,6 +18,7 @@ export interface FormulaPanelProps {
   onFormula: (latex: string | null) => Promise<void>
   onSubmit: () => void
   onContinue: () => void
+  onSolution: (latex: string | null) => Promise<void>
 }
 
 /** Which side of the panel the tabs are showing. */
@@ -303,7 +304,7 @@ function measureBlockWidth(html: string): number {
   return w
 }
 
-export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onContinue }: FormulaPanelProps) {
+export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onContinue, onSolution }: FormulaPanelProps) {
   // The saved value from the server; `draft` is what the user is typing.
   const saved = page?.formula ?? null
   const [draft, setDraft] = useState(saved ?? '')
@@ -463,6 +464,34 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
   // the board and unlocks on the same 「继续作答」.
   const frozen = phase === 'submitted' || phase === 'graded'
 
+  // ---- the reference solution ----------------------------------------------
+  // Unlike the question this stays editable once graded: the solution is what
+  // the agent produced, and being able to correct it afterwards is the whole
+  // reason there is an editor here rather than just rendered text.
+  const savedSolution = grading?.correctSolution ?? ''
+  const [solDraft, setSolDraft] = useState(savedSolution)
+  const [solBusy, setSolBusy] = useState(false)
+  const solDirty = solDraft.trim() !== savedSolution.trim()
+  const solRef = useRef<HTMLTextAreaElement>(null)
+
+  // Keyed on gradedAt, not on the grading object: a local save rebuilds that
+  // object, and re-seeding from it would yank the text out from under a user
+  // who kept typing. A genuinely new grade has a new timestamp.
+  useEffect(() => {
+    setSolDraft(grading?.correctSolution ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page?.id, grading?.gradedAt])
+
+  const commitSolution = async () => {
+    if (solBusy || !solDirty) return
+    setSolBusy(true)
+    try {
+      await onSolution(solDraft.trim() ? solDraft : null)
+    } finally {
+      setSolBusy(false)
+    }
+  }
+
   // Landing on a submitted page should show the report, not an empty tab.
   useEffect(() => {
     if (phase === 'submitted' || phase === 'graded') setTab('question')
@@ -525,11 +554,45 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
            sitting next to the thing it is supposed to be withheld from. */
         <section className="formula-answer" role="tabpanel" aria-labelledby="tab-answer">
           {grading ? (
-            grading.correctSolution ? (
-              <GradingSolution grading={grading} />
-            ) : (
-              <p className="grade-empty">这次批改没有给出参考解法。</p>
-            )
+            <>
+              {grading.correctSolution ? (
+                <GradingSolution grading={grading} />
+              ) : (
+                <p className="grade-empty">这次批改没有给出参考解法。可以在下方直接补写。</p>
+              )}
+
+              <div className="solution-editor">
+                <textarea
+                  ref={solRef}
+                  className="formula-input"
+                  data-testid="solution-input"
+                  value={solDraft}
+                  placeholder={'参考解法（LaTeX），如 \\displaystyle\\lim_{x\\to 0}\\frac{\\sin x}{x}=1'}
+                  rows={5}
+                  spellCheck={false}
+                  aria-label="参考解法 LaTeX 源码"
+                  onChange={(e) => setSolDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Same contract as the question editor: Enter commits,
+                    // Shift+Enter is a newline, Esc reverts.
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      void commitSolution()
+                      solRef.current?.blur()
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault()
+                      setSolDraft(savedSolution)
+                    }
+                  }}
+                  onBlur={() => void commitSolution()}
+                />
+                <div className="formula-foot">
+                  {solDirty ? <span className="formula-dirty">未保存</span> : null}
+                  {solBusy ? <span className="formula-saving">保存中…</span> : null}
+                  <span className="formula-hint">Enter 提交 · Shift+Enter 换行 · Esc 还原</span>
+                </div>
+              </div>
+            </>
           ) : (
             <p className="grade-empty">批改完成后这里会显示参考解法。</p>
           )}

@@ -1420,3 +1420,12 @@ code {
   overflow-y: auto;
   padding: 14px;
 }
+
+/* Editor under the reference solution. Separate from .formula-editor so the
+   two can be spaced independently — the answer view has no submit row. */
+.solution-editor {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.solution-editor .formula-input { width: 100%; }

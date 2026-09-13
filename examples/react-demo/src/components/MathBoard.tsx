@@ -33,6 +33,7 @@ export interface MathBoardProps {
   onFormula: (latex: string | null) => Promise<void>
   onSubmit: () => void
   onContinue: () => void
+  onSolution: (latex: string | null) => Promise<void>
   /** Dev-only: inject a grading without an agent. */
   onMockGrade?: (grading: GradingResult) => void
   onEditor: (editor: Editor | null) => void
@@ -85,6 +86,7 @@ export function MathBoard({
   onFormula,
   onSubmit,
   onContinue,
+  onSolution,
   onMockGrade,
   onEditor,
   onClear,
@@ -165,6 +167,7 @@ export function MathBoard({
         onFormula={onFormula}
         onSubmit={onSubmit}
         onContinue={onContinue}
+        onSolution={onSolution}
       />
 
       <div className="board-col">

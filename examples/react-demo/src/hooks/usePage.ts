@@ -67,6 +67,12 @@ export interface UsePageResult {
   continueWriting: () => void
   /** Dev-only: inject a grading without an agent, to exercise the UI. */
   setGradingLocal: (grading: GradingResult) => void
+  /**
+   * Rewrite just the reference solution. Grading is one JSON column, so this
+   * PATCHes the whole object back with the new solution spliced in — the rest
+   * of the agent's report is sent verbatim.
+   */
+  setSolution: (latex: string | null) => Promise<void>
   issueToken: () => Promise<string>
   revokeToken: () => Promise<void>
   /** Apply a camera deferred while the editor was still mounting. */
@@ -402,6 +408,21 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
     setPage({ ...prev, grading })
   }, [])
 
+  const setSolution = useCallback(async (latex: string | null) => {
+    const prev = pageRef.current
+    if (!prev?.grading) return
+    const next: GradingResult = { ...prev.grading, correctSolution: latex ?? '' }
+    // Optimistic: the rendered solution should move the instant Enter is hit.
+    setPage({ ...prev, grading: next })
+    try {
+      await pagesApi.patch(prev.id, { grading: next })
+      setError(null)
+    } catch (err) {
+      setPage(prev)
+      setError(`保存答案失败：${(err as Error).message}`)
+    }
+  }, [])
+
   const issueToken = useCallback(async (): Promise<string> => {
     const id = pageRef.current?.id
     if (!id) throw new Error('没有打开的页面')
@@ -434,6 +455,7 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
     submit,
     continueWriting,
     setGradingLocal,
+    setSolution,
     issueToken,
     revokeToken,
     syncCamera,

@@ -154,8 +154,9 @@ curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id> -H "X-App-Token: change-m
 | `page-card` | 页面卡片（带 `data-page-id`） |
 | `page-card-open` / `page-card-delete` | 卡片的打开 / 删除按钮 |
 | `board-canvas` | Quickdraw 宿主 div |
-| `page-formula-input` | 公式 LaTeX 输入框（Enter/失焦提交，Esc 还原） |
+| `page-formula-input` | 公式 LaTeX 输入框（Enter/失焦提交，Esc 还原）；提交后只读 |
 | `page-formula-display` | 公式渲染区（KaTeX） |
+| `solution-input` | 「答案」tab 下的参考解法输入框（Enter/失焦提交，Esc 还原）；写回 `grading.correctSolution` |
 | `page-name-input` | 页面名输入框 |
 | `page-style-trigger` | 纸张样式胶囊（弹层选择） |
 | `page-back-home` | 返回首页 |
@@ -179,3 +180,15 @@ curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id> -H "X-App-Token: change-m
 - **提交后画布与题目一起冻结**：`<Quickdraw readonly>` + 公式 textarea `readOnly`，并用上传的那张 PNG 盖住 canvas（`object-fit: contain`）。学生看到的 = agent 看到的，与视口/DPR/平移无关。「继续作答」只在本地解锁，刷新后回到 submitted —— 快照是历史，不删。题目跟着一起锁，是因为改了题就等于让批改结果对不上它批的那道题。
 - AI 出题默认走 `MockAIAdapter`（无网络）；`DoubaoAdapter` 是未接入的桩。**前端从不调用批改模型**，批改由外部 agent 完成。
 - `packages/core`、`packages/react` 是 Quickdraw 引擎，零改动。
+
+### 改参考解法
+
+「答案」tab 下有一个 textarea，直接改 `grading.correctSolution`。整份 grading 是一列 JSON，
+所以这里是把整个对象回写（其余字段原样带回），而不是单独更新某个字段：
+
+```bash
+# 先 GET 拿到完整 grading，改掉 correctSolution 再 PATCH 回去
+curl -s -X PATCH http://127.0.0.1:8790/api/pages/<id> \
+  -H "X-App-Token: <全局token>" -H "Content-Type: application/json" \
+  -d '{ "grading": { ...完整 grading，correctSolution 换成新的... } }'
+```

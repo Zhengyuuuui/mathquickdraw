@@ -203,6 +203,7 @@ export default function App() {
           onFormula={(latex) => pageState.setFormula(latex)}
           onSubmit={() => void beginSubmit()}
           onContinue={pageState.continueWriting}
+          onSolution={(latex) => pageState.setSolution(latex)}
           onMockGrade={pageState.setGradingLocal}
           onEditor={handleEditor}
           onClear={handleClear}
