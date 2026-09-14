@@ -88,6 +88,22 @@ export interface PagePatch {
   grading?: GradingResult | null
 }
 
+/**
+ * A non-2xx response. `status` is what callers branch on — `message` is the
+ * server's, meant for humans, and changes with locale/wording. Matching on
+ * the message instead of the status is how "no token yet" (a perfectly
+ * normal 404) ended up rendering as an error.
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
@@ -112,7 +128,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // non-JSON error body — keep the generic message
     }
-    throw new Error(message)
+    throw new ApiError(res.status, message)
   }
 
   if (res.status === 204) return undefined as T
@@ -195,7 +211,7 @@ export const pagesApi = {
       return await request(`/api/pages/${encodeURIComponent(id)}/token`)
     } catch (err) {
       // 404 is the normal "no token yet" answer, not a failure.
-      if (/HTTP 404/.test((err as Error).message)) return null
+      if (err instanceof ApiError && err.status === 404) return null
       throw err
     }
   },

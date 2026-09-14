@@ -410,8 +410,22 @@ export function usePage(store: Store, editorRef: { current: Editor | null }): Us
 
   const setSolution = useCallback(async (latex: string | null) => {
     const prev = pageRef.current
-    if (!prev?.grading) return
-    const next: GradingResult = { ...prev.grading, correctSolution: latex ?? '' }
+    if (!prev) return
+    // No grading yet (page is submitted, agent has not reported): writing the
+    // solution creates one. The verdict fields are placeholders — the point of
+    // this path is the solution text, and the server requires the enum.
+    const next: GradingResult = prev.grading
+      ? { ...prev.grading, correctSolution: latex ?? '' }
+      : {
+          readable: true,
+          overall: 'partial',
+          transcription: '',
+          firstError: null,
+          correctSolution: latex ?? '',
+          teacherComment: '',
+          // Overwritten by the server clock; only here to satisfy the type.
+          gradedAt: Date.now(),
+        }
     // Optimistic: the rendered solution should move the instant Enter is hit.
     setPage({ ...prev, grading: next })
     try {

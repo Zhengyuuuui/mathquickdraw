@@ -492,9 +492,17 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
     }
   }
 
-  // Landing on a submitted page should show the report, not an empty tab.
+  // Landing on a frozen page should show the report, not an empty tab. Keyed
+  // on the *transition* rather than the phase: writing the solution flips the
+  // phase submitted -> graded, and an unconditional reset would yank the tab
+  // out from under whoever is typing into the answer box.
+  const prevPhase = useRef(phase)
   useEffect(() => {
-    if (phase === 'submitted' || phase === 'graded') setTab('question')
+    const was = prevPhase.current
+    prevPhase.current = phase
+    const wasWritable = was === 'empty' || was === 'ready'
+    const nowFrozen = phase === 'submitted' || phase === 'graded'
+    if (wasWritable && nowFrozen) setTab('question')
   }, [phase])
 
   return (
@@ -549,11 +557,12 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
       </header>
 
       {tab === 'answer' ? (
-        /* The answer is its own view, not a section appended under the
-           question. Mixing the two is how a reference solution ends up
-           sitting next to the thing it is supposed to be withheld from. */
+        /* Same skeleton as the question side: one scrolling content block,
+           then a .formula-editor pinned underneath. Reusing the class rather
+           than inventing .solution-editor is the point — the two views should
+           be inspectable and styled identically. */
         <>
-          <section className="formula-answer" role="tabpanel" aria-labelledby="tab-answer">
+          <section className="formula-view" role="tabpanel" aria-labelledby="tab-answer" data-testid="answer-view">
             {grading ? (
               grading.correctSolution ? (
                 <GradingSolution grading={grading} />
@@ -561,46 +570,44 @@ export function FormulaPanel({ page, phase, grading, onFormula, onSubmit, onCont
                 <p className="grade-empty">这次批改没有给出参考解法，可以在下方直接补写。</p>
               )
             ) : (
-              <p className="grade-empty">批改完成后这里会显示参考解法。</p>
+              <p className="grade-empty">agent 还没批改。可以先在下方写下参考解法。</p>
             )}
           </section>
 
-          {/* Pinned below the scroll area, exactly like the question's editor.
-               Inside it a long solution would push the box off-screen and the
-               editor would look like it had never been added. */}
-          {grading && (
-            <div className="solution-editor">
-              <textarea
-                ref={solRef}
-                className="formula-input"
-                data-testid="solution-input"
-                value={solDraft}
-                placeholder={'参考解法（LaTeX），如 \\displaystyle\\lim_{x\\to 0}\\frac{\\sin x}{x}=1'}
-                rows={5}
-                spellCheck={false}
-                aria-label="参考解法 LaTeX 源码"
-                onChange={(e) => setSolDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  // Same contract as the question editor: Enter commits,
-                  // Shift+Enter is a newline, Esc reverts.
-                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault()
-                    void commitSolution()
-                    solRef.current?.blur()
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault()
-                    setSolDraft(savedSolution)
-                  }
-                }}
-                onBlur={() => void commitSolution()}
-              />
-              <div className="formula-foot">
-                {solDirty ? <span className="formula-dirty">未保存</span> : null}
-                {solBusy ? <span className="formula-saving">保存中…</span> : null}
-                <span className="formula-hint">Enter 提交 · Shift+Enter 换行 · Esc 还原</span>
-              </div>
+          {/* Always rendered, including the `submitted` phase where the agent
+               has not reported yet — that is precisely when an agent typing
+               into this box needs it to exist. */}
+          <div className="formula-editor">
+            <textarea
+              ref={solRef}
+              className="formula-input"
+              data-testid="solution-input"
+              value={solDraft}
+              placeholder={'参考解法（LaTeX），如 \\displaystyle\\lim_{x\\to 0}\\frac{\\sin x}{x}=1'}
+              rows={5}
+              spellCheck={false}
+              aria-label="参考解法 LaTeX 源码"
+              onChange={(e) => setSolDraft(e.target.value)}
+              onKeyDown={(e) => {
+                // Same contract as the question editor: Enter commits,
+                // Shift+Enter is a newline, Esc reverts.
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault()
+                  void commitSolution()
+                  solRef.current?.blur()
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setSolDraft(savedSolution)
+                }
+              }}
+              onBlur={() => void commitSolution()}
+            />
+            <div className="formula-foot">
+              {solDirty ? <span className="formula-dirty">未保存</span> : null}
+              {solBusy ? <span className="formula-saving">保存中…</span> : null}
+              <span className="formula-hint">Enter 提交 · Shift+Enter 换行 · Esc 还原</span>
             </div>
-          )}
+          </div>
         </>
       ) : (
         <>

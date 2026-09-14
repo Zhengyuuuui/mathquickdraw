@@ -27,6 +27,11 @@ export function HomeView({ onOpen }: HomeViewProps) {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
+  // Bulk selection. Off by default: a card's click means "open this", and
+  // redefining that without the user asking is how people lose work.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
+  const [deleting, setDeleting] = useState(false)
   // AI section state: the prompt, the in-flight flag, and its own error.
   const [prompt, setPrompt] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
@@ -103,6 +108,62 @@ export function HomeView({ onOpen }: HomeViewProps) {
     [refresh],
   )
 
+  // ---- bulk selection ------------------------------------------------------
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false)
+    setSelected(new Set())
+  }, [])
+
+  const toggleSelectMode = useCallback(() => {
+    if (selectMode) exitSelectMode()
+    else setSelectMode(true)
+  }, [selectMode, exitSelectMode])
+
+  const toggleOne = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const allIds = pages?.map((p) => p.id) ?? []
+  const allSelected = allIds.length > 0 && selected.size === allIds.length
+
+  const toggleAll = useCallback(() => {
+    setSelected(allSelected ? new Set() : new Set(allIds))
+  }, [allSelected, allIds])
+
+  /**
+   * Delete every selected page. Sequential rather than parallel: one failing
+   * request should not abort the rest, and the user is owed an accurate
+   * count of what actually went.
+   */
+  const handleBulkDelete = useCallback(async () => {
+    const targets = (pages ?? []).filter((p) => selected.has(p.id))
+    if (targets.length === 0) return
+    const names = targets.length === 1 ? `「${targets[0].name}」` : `选中的 ${targets.length} 个页面`
+    if (!window.confirm(`删除${names}？此操作不可撤销。`)) return
+
+    setDeleting(true)
+    const failed: string[] = []
+    for (const p of targets) {
+      try {
+        await pagesApi.remove(p.id)
+      } catch (err) {
+        failed.push(`${p.name}：${(err as Error).message}`)
+      }
+    }
+    setDeleting(false)
+    exitSelectMode()
+    await refresh()
+    if (failed.length) {
+      setError(`有 ${failed.length} 个页面没能删掉 —— ${failed[0]}`)
+    }
+  }, [pages, selected, exitSelectMode, refresh])
+
   // AI formula → create page → open it. A failed generation must not leave
   // an empty page behind, so create() only runs after the adapter resolves.
   const handleGenerate = useCallback(async () => {
@@ -133,17 +194,30 @@ export function HomeView({ onOpen }: HomeViewProps) {
           <h1>数学手写答题</h1>
           <p>选一张纸开始，或新建一张。</p>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          data-testid="home-new-page"
-          onClick={() => {
-            setCreateError(null)
-            setDialogOpen(true)
-          }}
-        >
-          新建页面
-        </button>
+        <div className="home-head-actions">
+          <button
+            type="button"
+            className={`btn${selectMode ? ' is-on' : ''}`}
+            data-testid="home-multi-select"
+            aria-pressed={selectMode}
+            disabled={deleting || pages === null || pages.length === 0}
+            onClick={toggleSelectMode}
+          >
+            {selectMode ? '退出多选' : '多选'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            data-testid="home-new-page"
+            disabled={selectMode}
+            onClick={() => {
+              setCreateError(null)
+              setDialogOpen(true)
+            }}
+          >
+            新建页面
+          </button>
+        </div>
       </header>
 
       {error && (
@@ -184,10 +258,11 @@ export function HomeView({ onOpen }: HomeViewProps) {
           {pages.map((p) => {
             const theme = p.style.theme ?? 'light'
             const grid = p.style.grid ?? 'none'
+            const isSel = selected.has(p.id)
             return (
               <li
                 key={p.id}
-                className={`page-card${openingId === p.id ? ' is-opening' : ''}`}
+                className={`page-card${openingId === p.id ? ' is-opening' : ''}${isSel ? ' is-selected' : ''}${selectMode ? ' is-selectable' : ''}`}
                 data-testid="page-card"
                 data-page-id={p.id}
               >
@@ -196,13 +271,19 @@ export function HomeView({ onOpen }: HomeViewProps) {
                 <button
                   type="button"
                   className="page-open"
-                  data-testid="page-card-open"
-                  disabled={openingId !== null}
-                  aria-label={`打开 ${p.name}`}
-                  onClick={() => void handleOpen(p.id)}
+                  data-testid={selectMode ? 'page-card-select' : 'page-card-open'}
+                  disabled={!selectMode && openingId !== null}
+                  aria-label={selectMode ? `${isSel ? '取消选择' : '选择'} ${p.name}` : `打开 ${p.name}`}
+                  aria-pressed={selectMode ? isSel : undefined}
+                  onClick={() => (selectMode ? toggleOne(p.id) : void handleOpen(p.id))}
                 >
                   <span className="page-shot">
                     <GridPreview grid={grid} theme={theme} width={248} height={156} cell={16} />
+                    {selectMode && (
+                      <span className={`page-check${isSel ? ' is-on' : ''}`} aria-hidden="true">
+                        {isSel ? '✓' : ''}
+                      </span>
+                    )}
                   </span>
                   <span className="page-meta">
                     <span className="page-name" title={p.name}>
@@ -223,21 +304,62 @@ export function HomeView({ onOpen }: HomeViewProps) {
                     </span>
                   </span>
                 </button>
-                <button
-                  type="button"
-                  className="page-del"
-                  data-testid="page-card-delete"
-                  aria-label={`删除 ${p.name}`}
-                  title="删除页面"
-                  disabled={openingId !== null}
-                  onClick={() => void handleDelete(p)}
-                >
-                  ×
-                </button>
+                {/* Per-card delete is redundant in select mode — the action bar
+                    below does the same job for everything ticked at once. */}
+                {!selectMode && (
+                  <button
+                    type="button"
+                    className="page-del"
+                    data-testid="page-card-delete"
+                    aria-label={`删除 ${p.name}`}
+                    title="删除页面"
+                    disabled={openingId !== null}
+                    onClick={() => void handleDelete(p)}
+                  >
+                    ×
+                  </button>
+                )}
               </li>
             )
           })}
         </ul>
+      )}
+
+      {selectMode && pages && pages.length > 0 && (
+        <div className="select-bar" role="toolbar" aria-label="批量操作">
+          <span className="select-count" data-testid="select-count">
+            已选 {selected.size} / {pages.length}
+          </span>
+          <div className="select-actions">
+            <button
+              type="button"
+              className="btn"
+              data-testid="select-all"
+              disabled={deleting}
+              onClick={toggleAll}
+            >
+              {allSelected ? '取消全选' : '全选'}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              data-testid="select-cancel"
+              disabled={deleting}
+              onClick={exitSelectMode}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              data-testid="select-delete"
+              disabled={deleting || selected.size === 0}
+              onClick={() => void handleBulkDelete()}
+            >
+              {deleting ? '删除中…' : `删除选中${selected.size ? `（${selected.size}）` : ''}`}
+            </button>
+          </div>
+        </div>
       )}
 
       <section className="ai-card" aria-label="AI 出题">

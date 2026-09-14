@@ -153,6 +153,9 @@ curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id> -H "X-App-Token: change-m
 | `ai-generate` | 首页「AI 出题并新建」按钮 |
 | `page-card` | 页面卡片（带 `data-page-id`） |
 | `page-card-open` / `page-card-delete` | 卡片的打开 / 删除按钮 |
+| `home-multi-select` | 首页「多选」开关（`aria-pressed` 表示是否进入多选） |
+| `page-card-select` | 多选模式下卡片的选择按钮（替代 `page-card-open`） |
+| `select-count` / `select-all` / `select-cancel` / `select-delete` | 多选操作条：已选计数 / 全选 / 取消 / 批量删除 |
 | `board-canvas` | Quickdraw 宿主 div |
 | `page-formula-input` | 公式 LaTeX 输入框（Enter/失焦提交，Esc 还原）；提交后只读 |
 | `page-formula-display` | 公式渲染区（KaTeX） |
@@ -165,7 +168,8 @@ curl -s -X DELETE http://127.0.0.1:8790/api/pages/<id> -H "X-App-Token: change-m
 | `grade-submit` / `grade-continue` | 「提交批改」/「继续作答」 |
 | `grade-preview-image` / `grade-preview-confirm` / `grade-preview-cancel` | 提交预览弹窗的图 / 确认 / 取消 |
 | `grade-result` / `grade-overall` / `grade-transcription` / `grade-first-error` | 批改结果块 / 结论徽章 / 转写 / 第一个错误 |
-| `tab-question` / `tab-answer` | 「题目」/「答案」两个独立视图（后者在 empty/ready 时禁用；选中答案时不再显示公式与输入框） |
+| `tab-question` / `tab-answer` | 「题目」/「答案」两个独立视图（后者在 empty/ready 时禁用） |
+| `answer-view` | 「答案」tab 的内容区。两个 tab 共用 `.formula-view` / `.formula-editor` 骨架，靠这个 testid 区分 |
 | `board-snapshot` | 冻结后盖在画布上的快照 `<img>` |
 | `page-settings-trigger` / `page-settings` | 顶栏齿轮 / 设置弹窗 |
 | `token-generate` / `token-revoke` / `token-value` | 生成 token / 作废 token / 当前 token 值（长期可取回） |

@@ -1,0 +1,8 @@
+# SPA fallback. The app routes with the History API, so /6fmx1oeteyh is a
+# real URL — refreshing or opening it cold must serve index.html rather than
+# Pages' 404. The 200 is an internal rewrite, not a browser redirect, so the
+# address bar keeps the deep link.
+#
+# Vite copies public/ verbatim into dist/, which is what `wrangler pages
+# deploy` uploads.
+/*    /index.html    200
