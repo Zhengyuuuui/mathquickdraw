@@ -7,6 +7,9 @@
 // are parallel paths — the global token keeps every permission it always had;
 // a page token is a narrow capability for exactly one page.
 
+// Must stay the first import: it installs the globals the modules below use.
+import './runtime'
+
 import type { Env } from './env'
 import {
   clearPageTokenJti,
@@ -248,10 +251,22 @@ async function readSubmission(request: Request): Promise<ArrayBuffer> {
   }
 
   const image = form.get('image')
-  if (!(image instanceof File)) throw new HttpError(400, 'BAD_REQUEST', '缺少 image 文件字段')
-  if (image.size > MAX_SUBMISSION_BYTES) throw new HttpError(413, 'PAYLOAD_TOO_LARGE', '快照图片过大')
-  if (image.size === 0) throw new HttpError(400, 'BAD_REQUEST', 'image 为空')
-  return image.arrayBuffer()
+  // Duck-typed rather than `instanceof File`: Node 18 has no global File at
+  // all (it landed in Node 20), so the instanceof form throws ReferenceError
+  // there instead of returning a clean 400. Anything multipart-decodable
+  // exposes arrayBuffer() and size, which is all this handler needs.
+  if (
+    !image ||
+    typeof image === 'string' ||
+    typeof (image as { arrayBuffer?: unknown }).arrayBuffer !== 'function' ||
+    typeof (image as { size?: unknown }).size !== 'number'
+  ) {
+    throw new HttpError(400, 'BAD_REQUEST', '缺少 image 文件字段')
+  }
+  const file = image as { size: number; arrayBuffer: () => Promise<ArrayBuffer> }
+  if (file.size > MAX_SUBMISSION_BYTES) throw new HttpError(413, 'PAYLOAD_TOO_LARGE', '快照图片过大')
+  if (file.size === 0) throw new HttpError(400, 'BAD_REQUEST', 'image 为空')
+  return file.arrayBuffer()
 }
 
 // ---- responses -------------------------------------------------------------

@@ -887,6 +887,16 @@ code {
   box-shadow: var(--shadow);
   background: #fbf9f4;
   position: relative;
+  /* iOS Safari turns a long-press into a text selection plus the system
+     copy/share sheet, which lands right on top of a pen stroke. The paper is
+     a canvas, never text — nothing here is selectable. The editors that DO
+     take text (formula, solution) live outside this container, so they keep
+     their selection behaviour untouched. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
 }
 
 .board-footer {

@@ -172,8 +172,14 @@ export function MathBoard({
 
       <div className="board-col">
         {/* Quickdraw's host: the canvas it creates fills this div. The engine
-            component accepts no testid, so the wrapper carries the marker. */}
-        <div className="board-frame" data-testid="board-canvas">
+            component accepts no testid, so the wrapper carries the marker.
+            onContextMenu suppresses the long-press menu iOS Safari raises over
+            the canvas — CSS alone does not stop it. */}
+        <div
+          className="board-frame"
+          data-testid="board-canvas"
+          onContextMenu={(e) => e.preventDefault()}
+        >
           <Quickdraw
             ref={boardRef}
             store={store}
