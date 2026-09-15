@@ -1285,12 +1285,22 @@ code {
   overflow: auto;
   display: flex;
   justify-content: center;
+  /* Same treatment as the paper: a long-press on iOS raises the system
+     share sheet over an <img>, which is exactly what a student inspecting
+     their own sheet does not need. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .grade-preview-frame img {
   max-width: 100%;
   height: auto;
   display: block;
   border-radius: 4px;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none; /* the image is a preview, never an interaction target */
 }
 
 /* ---------- page settings ---------- */

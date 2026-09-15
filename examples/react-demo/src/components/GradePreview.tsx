@@ -61,7 +61,13 @@ export function GradePreview({ open, url, width, height, busy, onConfirm, onCanc
           {width} × {height} px · 提交后画布冻结，agent 将批改这张图
         </p>
 
-        <div className="grade-preview-frame">
+        {/* onContextMenu because CSS cannot suppress iOS's long-press sheet
+            on an <img>; pointer-events is off on the image itself, so the
+            container has to eat the event. */}
+        <div
+          className="grade-preview-frame"
+          onContextMenu={(e) => e.preventDefault()}
+        >
           {url && (
             <img
               src={url}
