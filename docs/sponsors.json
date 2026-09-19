@@ -1,5 +1,15 @@
 {
-  "generatedAt": "2026-09-18T09:11:49.958Z",
+  "generatedAt": "2026-09-19T08:58:26.464Z",
   "login": "quickdrawjs",
-  "sponsors": []
+  "sponsors": [
+    {
+      "login": "tldraw",
+      "name": "tldraw",
+      "url": "https://tldraw.com",
+      "avatar": "https://avatars.githubusercontent.com/u/86724562?v=4",
+      "monthly": 0,
+      "oneTime": false,
+      "since": "2026-09-18"
+    }
+  ]
 }
